@@ -1,6 +1,7 @@
 import * as React from "react";
 import type { ContextMenuItem } from "@t3tools/contracts";
 import type { SidebarProjectSortOrder, SidebarThreadSortOrder } from "@t3tools/contracts/settings";
+export { isInternalSubagentThread as isSidebarSubagentThread } from "../threadVisibility";
 import {
   getThreadSortTimestamp,
   sortThreads,
@@ -90,10 +91,6 @@ export function buildMultiSelectThreadContextMenuItems(input: {
     },
     { id: "delete", label: `Delete (${input.count})`, destructive: true },
   ];
-}
-
-export function isSidebarSubagentThread(thread: Pick<SidebarThreadSummary, "lineage">): boolean {
-  return thread.lineage.relationshipToParent === "subagent";
 }
 
 export function getSidebarForkParentThreadId(
