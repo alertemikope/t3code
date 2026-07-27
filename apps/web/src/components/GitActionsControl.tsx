@@ -986,7 +986,9 @@ export default function GitActionsControl({
     () => (activeThreadRef ? { threadRef: activeThreadRef } : undefined),
     [activeThreadRef],
   );
-  const activeServerThread = useThread(activeThreadRef);
+  const activeServerThread = useThread(activeThreadRef, {
+    waitForShell: draftId !== undefined,
+  });
   const activeDraftThread = useComposerDraftStore((store) =>
     draftId
       ? store.getDraftSession(draftId)
