@@ -159,6 +159,8 @@ describe("ProviderSessionReaper", () => {
       respondToUserInput: () => unsupported(),
       stopSession,
       listSessions: () => Effect.succeed([]),
+      listNativeSessions: () => unsupported(),
+      bindNativeSession: () => unsupported(),
       getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
       getInstanceInfo: (instanceId) => {
         const driverKind = ProviderDriverKind.make(String(instanceId));

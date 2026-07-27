@@ -1,4 +1,11 @@
-import { ArchiveIcon, ArchiveX, LoaderIcon, PlusIcon, RefreshCwIcon } from "lucide-react";
+import {
+  ArchiveIcon,
+  ArchiveX,
+  ImportIcon,
+  LoaderIcon,
+  PlusIcon,
+  RefreshCwIcon,
+} from "lucide-react";
 import { Link } from "@tanstack/react-router";
 import type { CSSProperties } from "react";
 import { useCallback, useMemo, useRef, useState } from "react";
@@ -72,6 +79,8 @@ import { Switch } from "../ui/switch";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import { Tooltip, TooltipPopup, TooltipTrigger } from "../ui/tooltip";
 import { AddProviderInstanceDialog } from "./AddProviderInstanceDialog";
+import { ImportProviderSessionsDialog } from "./ImportProviderSessionsDialog";
+import { importableNativeSessionProviders } from "./ImportProviderSessionsDialog.logic";
 import {
   canOneClickUpdateProviderCandidate,
   collectProviderUpdateCandidates,
@@ -1101,6 +1110,7 @@ export function ProviderSettingsPanel() {
   const updateSettings = useUpdatePrimarySettings();
   const serverProviders = useAtomValue(primaryServerProvidersAtom);
   const primaryEnvironment = usePrimaryEnvironment();
+  const projects = useProjects();
   const refreshServerProviders = useAtomCommand(serverEnvironment.refreshProviders, {
     reportFailure: false,
   });
@@ -1109,6 +1119,7 @@ export function ProviderSettingsPanel() {
   });
   const [isRefreshingProviders, setIsRefreshingProviders] = useState(false);
   const [isAddInstanceDialogOpen, setIsAddInstanceDialogOpen] = useState(false);
+  const [isImportSessionsDialogOpen, setIsImportSessionsDialogOpen] = useState(false);
   const [updatingProviderDrivers, setUpdatingProviderDrivers] = useState<
     ReadonlySet<ProviderDriverKind>
   >(() => new Set());
@@ -1117,6 +1128,10 @@ export function ProviderSettingsPanel() {
 
   const providerUpdateCandidates = useMemo(
     () => collectProviderUpdateCandidates(serverProviders),
+    [serverProviders],
+  );
+  const nativeSessionProviders = useMemo(
+    () => importableNativeSessionProviders(serverProviders),
     [serverProviders],
   );
   const providerUpdateCandidateByInstanceId = useMemo(
@@ -1248,16 +1263,30 @@ export function ProviderSettingsPanel() {
 
   for (const providerSettings of visibleProviderSettings) {
     type LegacyProviderSettings = (typeof settings.providers)[keyof typeof settings.providers];
-    const legacyProviders = settings.providers as Record<string, LegacyProviderSettings>;
+    const legacyProviders = settings.providers as Record<
+      string,
+      LegacyProviderSettings | undefined
+    >;
     const defaultLegacyProviders = DEFAULT_UNIFIED_SETTINGS.providers as Record<
       string,
-      LegacyProviderSettings
+      LegacyProviderSettings | undefined
     >;
     const driver = providerSettings.provider;
     const defaultInstanceId = defaultInstanceIdForDriver(driver);
     const explicitInstance = settings.providerInstances?.[defaultInstanceId];
-    const legacyConfig = legacyProviders[providerSettings.provider]!;
-    const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider]!;
+    const legacyConfig = legacyProviders[providerSettings.provider];
+    const defaultLegacyConfig = defaultLegacyProviders[providerSettings.provider];
+    if (legacyConfig === undefined || defaultLegacyConfig === undefined) {
+      for (const [id, instance] of instancesByDriver.get(driver) ?? []) {
+        rows.push({
+          instanceId: id,
+          instance,
+          driver: instance.driver,
+          isDefault: id === defaultInstanceId,
+        });
+      }
+      continue;
+    }
     const effectiveInstance: ProviderInstanceConfig =
       explicitInstance ??
       ({
@@ -1417,6 +1446,27 @@ export function ProviderSettingsPanel() {
                     size="icon-xs"
                     variant="ghost"
                     className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
+                    disabled={!primaryEnvironment || nativeSessionProviders.length === 0}
+                    onClick={() => setIsImportSessionsDialogOpen(true)}
+                    aria-label="Import Ocean or Pi session"
+                  >
+                    <ImportIcon className="size-3" />
+                  </Button>
+                }
+              />
+              <TooltipPopup side="top">
+                {nativeSessionProviders.length > 0
+                  ? "Import Ocean or Pi session"
+                  : "Enable a ready Ocean or Pi provider to import sessions"}
+              </TooltipPopup>
+            </Tooltip>
+            <Tooltip>
+              <TooltipTrigger
+                render={
+                  <Button
+                    size="icon-xs"
+                    variant="ghost"
+                    className="size-5 rounded-sm p-0 text-muted-foreground hover:text-foreground"
                     disabled={isRefreshingProviders}
                     onClick={() => void refreshProviders()}
                     aria-label="Refresh provider status"
@@ -1536,6 +1586,15 @@ export function ProviderSettingsPanel() {
 
       {isAddInstanceDialogOpen ? (
         <AddProviderInstanceDialog open onOpenChange={setIsAddInstanceDialogOpen} />
+      ) : null}
+      {isImportSessionsDialogOpen && primaryEnvironment ? (
+        <ImportProviderSessionsDialog
+          open
+          onOpenChange={setIsImportSessionsDialogOpen}
+          environmentId={primaryEnvironment.environmentId}
+          providers={serverProviders}
+          projects={projects}
+        />
       ) : null}
     </SettingsPageContainer>
   );

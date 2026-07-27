@@ -2,6 +2,11 @@
 
 T3 Code is a minimal web GUI for coding agents (currently Codex, Claude, Cursor, and OpenCode, more coming soon).
 
+> [!NOTE]
+> This fork adds first-class Ocean and Pi access, per-thread model/thinking
+> selection, native session import, and a safe upstream updater. See the
+> [Ocean and Pi integration guide](./docs/providers/ocean-pi.md).
+
 ## Installation
 
 > [!WARNING]
@@ -58,6 +63,7 @@ There's no public docs site yet, checkout the miscellaneous markdown files in [d
 - [Keeping T3 Code in sync](./docs/user/server-updates.md)
 - [Architecture overview](./docs/architecture/overview.md)
 - [Provider guides](./docs/providers/codex.md)
+- [Ocean and Pi fork integration](./docs/providers/ocean-pi.md)
 - [Operations](./docs/operations/ci.md)
 - [Reference](./docs/reference/encyclopedia.md)
 

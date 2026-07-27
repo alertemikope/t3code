@@ -60,6 +60,12 @@ import {
 } from "./orchestration.ts";
 import { ProviderInstanceId } from "./providerInstance.ts";
 import {
+  ProviderBindNativeSessionInput,
+  ProviderListNativeSessionsInput,
+  ProviderNativeSessionError,
+  ProviderNativeSessionResult,
+} from "./provider.ts";
+import {
   RelayClientInstallFailedError,
   RelayClientInstallProgressEventSchema,
   RelayClientStatusSchema,
@@ -207,6 +213,8 @@ export const WS_METHODS = {
   serverProbe: "server.probe",
   serverGetConfig: "server.getConfig",
   serverRefreshProviders: "server.refreshProviders",
+  serverListProviderSessions: "server.listProviderSessions",
+  serverBindProviderSession: "server.bindProviderSession",
   serverUpdateProvider: "server.updateProvider",
   serverUpdateServer: "server.updateServer",
   serverUpsertKeybinding: "server.upsertKeybinding",
@@ -275,6 +283,18 @@ export const WsServerRefreshProvidersRpc = Rpc.make(WS_METHODS.serverRefreshProv
   }),
   success: ServerProviderUpdatedPayload,
   error: EnvironmentAuthorizationError,
+});
+
+export const WsServerListProviderSessionsRpc = Rpc.make(WS_METHODS.serverListProviderSessions, {
+  payload: ProviderListNativeSessionsInput,
+  success: ProviderNativeSessionResult,
+  error: Schema.Union([ProviderNativeSessionError, EnvironmentAuthorizationError]),
+});
+
+export const WsServerBindProviderSessionRpc = Rpc.make(WS_METHODS.serverBindProviderSession, {
+  payload: ProviderBindNativeSessionInput,
+  success: Schema.Struct({}),
+  error: Schema.Union([ProviderNativeSessionError, EnvironmentAuthorizationError]),
 });
 
 export const WsServerUpdateProviderRpc = Rpc.make(WS_METHODS.serverUpdateProvider, {
@@ -702,6 +722,8 @@ export const WsRpcGroup = RpcGroup.make(
   WsServerProbeRpc,
   WsServerGetConfigRpc,
   WsServerRefreshProvidersRpc,
+  WsServerListProviderSessionsRpc,
+  WsServerBindProviderSessionRpc,
   WsServerUpdateProviderRpc,
   WsServerUpdateServerRpc,
   WsServerUpsertKeybindingRpc,

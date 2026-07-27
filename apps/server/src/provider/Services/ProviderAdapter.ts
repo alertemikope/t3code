@@ -13,6 +13,7 @@ import type {
   ProviderDriverKind,
   ProviderUserInputAnswers,
   ProviderRuntimeEvent,
+  ProviderNativeSession,
   ProviderSendTurnInput,
   ProviderSession,
   ProviderSessionStartInput,
@@ -95,6 +96,15 @@ export interface ProviderAdapterShape<TError> {
    * List currently active provider sessions for this adapter.
    */
   readonly listSessions: () => Effect.Effect<ReadonlyArray<ProviderSession>>;
+
+  /**
+   * List durable provider-native sessions that are not necessarily active in
+   * T3 Code. Implemented by ACP adapters whose agents advertise
+   * `sessionCapabilities.list`.
+   */
+  readonly listNativeSessions?: (
+    cwd?: string,
+  ) => Effect.Effect<ReadonlyArray<ProviderNativeSession>, TError>;
 
   /**
    * Check whether this adapter owns an active session id.

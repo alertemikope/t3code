@@ -95,6 +95,55 @@ export const ProviderStopSessionInput = Schema.Struct({
 });
 export type ProviderStopSessionInput = typeof ProviderStopSessionInput.Type;
 
+/**
+ * A durable conversation exposed by an external provider through ACP
+ * `session/list`. Unlike `ProviderSession`, this entry is not currently
+ * running in T3 Code; it can be attached to a T3 thread and resumed later.
+ */
+export const ProviderNativeSession = Schema.Struct({
+  provider: ProviderDriverKind,
+  providerInstanceId: ProviderInstanceId,
+  sessionId: TrimmedNonEmptyString,
+  cwd: TrimmedNonEmptyString,
+  title: Schema.optional(TrimmedNonEmptyString),
+  updatedAt: Schema.optional(TrimmedNonEmptyString),
+});
+export type ProviderNativeSession = typeof ProviderNativeSession.Type;
+
+export const ProviderListNativeSessionsInput = Schema.Struct({
+  providerInstanceId: ProviderInstanceId,
+  cwd: Schema.optional(TrimmedNonEmptyString),
+});
+export type ProviderListNativeSessionsInput = typeof ProviderListNativeSessionsInput.Type;
+
+export const ProviderBindNativeSessionInput = Schema.Struct({
+  threadId: ThreadId,
+  providerInstanceId: ProviderInstanceId,
+  sessionId: TrimmedNonEmptyString,
+  cwd: TrimmedNonEmptyString,
+  runtimeMode: RuntimeMode,
+});
+export type ProviderBindNativeSessionInput = typeof ProviderBindNativeSessionInput.Type;
+
+export const ProviderNativeSessionResult = Schema.Struct({
+  sessions: Schema.Array(ProviderNativeSession),
+});
+export type ProviderNativeSessionResult = typeof ProviderNativeSessionResult.Type;
+
+export class ProviderNativeSessionError extends Schema.TaggedErrorClass<ProviderNativeSessionError>()(
+  "ProviderNativeSessionError",
+  {
+    providerInstanceId: ProviderInstanceId,
+    operation: TrimmedNonEmptyString,
+    detail: TrimmedNonEmptyString,
+    cause: Schema.optional(Schema.Defect()),
+  },
+) {
+  override get message(): string {
+    return `${this.operation} failed for provider instance '${this.providerInstanceId}': ${this.detail}`;
+  }
+}
+
 export const ProviderRespondToRequestInput = Schema.Struct({
   threadId: ThreadId,
   requestId: ApprovalRequestId,

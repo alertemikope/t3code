@@ -12,8 +12,11 @@
 import {
   ModelSelection,
   NonNegativeInt,
+  ProviderBindNativeSessionInput,
   ThreadId,
   ProviderInterruptTurnInput,
+  ProviderListNativeSessionsInput,
+  ProviderNativeSessionError,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderSendTurnInput,
@@ -967,6 +970,113 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     },
   );
 
+  const listNativeSessions: ProviderServiceMethod<"listNativeSessions"> = Effect.fn(
+    "listNativeSessions",
+  )(function* (rawInput) {
+    const input = yield* Schema.decodeUnknownEffect(ProviderListNativeSessionsInput)(rawInput).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: rawInput.providerInstanceId,
+            operation: "session/list",
+            detail: "Invalid native session query.",
+            cause,
+          }),
+      ),
+    );
+    const adapter = yield* registry.getByInstance(input.providerInstanceId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: input.providerInstanceId,
+            operation: "session/list",
+            detail: "The provider instance is not available.",
+            cause,
+          }),
+      ),
+    );
+    if (!adapter.listNativeSessions) {
+      return yield* new ProviderNativeSessionError({
+        providerInstanceId: input.providerInstanceId,
+        operation: "session/list",
+        detail: "This provider does not expose native session discovery.",
+      });
+    }
+    return yield* adapter.listNativeSessions(input.cwd).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: input.providerInstanceId,
+            operation: "session/list",
+            detail: cause instanceof Error ? cause.message : "ACP session discovery failed.",
+            cause,
+          }),
+      ),
+    );
+  });
+
+  const bindNativeSession: ProviderServiceMethod<"bindNativeSession"> = Effect.fn(
+    "bindNativeSession",
+  )(function* (rawInput) {
+    const input = yield* Schema.decodeUnknownEffect(ProviderBindNativeSessionInput)(rawInput).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: rawInput.providerInstanceId,
+            operation: "session/import",
+            detail: "Invalid native session binding.",
+            cause,
+          }),
+      ),
+    );
+    const info = yield* registry.getInstanceInfo(input.providerInstanceId).pipe(
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: input.providerInstanceId,
+            operation: "session/import",
+            detail: "The provider instance is not available.",
+            cause,
+          }),
+      ),
+    );
+    if (info.driverKind !== "ocean" && info.driverKind !== "piAgent") {
+      return yield* new ProviderNativeSessionError({
+        providerInstanceId: input.providerInstanceId,
+        operation: "session/import",
+        detail: `Driver '${info.driverKind}' does not support the Ocean/Pi import cursor.`,
+      });
+    }
+    yield* directory
+      .upsert({
+        threadId: input.threadId,
+        provider: info.driverKind,
+        providerInstanceId: input.providerInstanceId,
+        runtimeMode: input.runtimeMode,
+        status: "stopped",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: input.sessionId,
+        },
+        runtimePayload: {
+          cwd: input.cwd,
+          importedNativeSessionId: input.sessionId,
+          importedAt: yield* nowIso,
+        },
+      })
+      .pipe(
+        Effect.mapError(
+          (cause) =>
+            new ProviderNativeSessionError({
+              providerInstanceId: input.providerInstanceId,
+              operation: "session/import",
+              detail: "Could not persist the native session binding.",
+              cause,
+            }),
+        ),
+      );
+  });
+
   const getCapabilities: ProviderServiceMethod<"getCapabilities"> = (instanceId) =>
     registry.getByInstance(instanceId).pipe(Effect.map((adapter) => adapter.capabilities));
 
@@ -1082,6 +1192,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     respondToUserInput,
     stopSession,
     listSessions,
+    listNativeSessions,
+    bindNativeSession,
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,

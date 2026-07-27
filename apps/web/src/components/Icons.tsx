@@ -696,3 +696,20 @@ export const PiAgentIcon: Icon = ({ className, ...props }) => (
     <path fill="#fff" d="M517.36 400H634.72V634.72H517.36Z" />
   </svg>
 );
+
+export const OceanIcon: Icon = ({ className, ...props }) => (
+  <svg
+    {...props}
+    viewBox="0 0 64 64"
+    fill="none"
+    className={cn("text-cyan-600 dark:text-cyan-400", className)}
+  >
+    <rect width="64" height="64" rx="14" fill="currentColor" opacity=".14" />
+    <path
+      d="M8 26c7.2 0 7.2-5 14.4-5s7.2 5 14.4 5 7.2-5 14.4-5c1.8 0 3.4.3 4.8.8M8 36c7.2 0 7.2-5 14.4-5s7.2 5 14.4 5 7.2-5 14.4-5c1.8 0 3.4.3 4.8.8M8 46c7.2 0 7.2-5 14.4-5s7.2 5 14.4 5 7.2-5 14.4-5c1.8 0 3.4.3 4.8.8"
+      stroke="currentColor"
+      strokeWidth="4"
+      strokeLinecap="round"
+    />
+  </svg>
+);

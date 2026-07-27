@@ -389,6 +389,93 @@ export const OpenCodeSettings = makeProviderSettingsSchema(
 );
 export type OpenCodeSettings = typeof OpenCodeSettings.Type;
 
+export const OceanSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("ocean-acp").pipe(
+      Schema.annotateKey({
+        title: "Ocean ACP binary",
+        description: "Path to the ocean-acp bridge installed with the Ocean stack.",
+        providerSettingsForm: {
+          placeholder: "ocean-acp",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    daemonUrl: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("http://127.0.0.1:4780")),
+      Schema.annotateKey({
+        title: "Ocean daemon URL",
+        description: "Ocean daemon used for sessions, models, tools and history.",
+        providerSettingsForm: {
+          placeholder: "http://127.0.0.1:4780",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    launchArgs: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("")),
+      Schema.annotateKey({
+        title: "Additional arguments",
+        description: "Extra arguments passed to ocean-acp.",
+        providerSettingsForm: {
+          placeholder: "",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "daemonUrl", "launchArgs"],
+  },
+);
+export type OceanSettings = typeof OceanSettings.Type;
+
+export const PiSettings = makeProviderSettingsSchema(
+  {
+    enabled: Schema.Boolean.pipe(
+      Schema.withDecodingDefault(Effect.succeed(true)),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+    binaryPath: makeBinaryPathSetting("npx").pipe(
+      Schema.annotateKey({
+        title: "Launcher binary",
+        description: "Command used to start pi-acp.",
+        providerSettingsForm: {
+          placeholder: "npx",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    launchArgs: TrimmedString.pipe(
+      Schema.withDecodingDefault(Effect.succeed("-y pi-acp@0.0.32")),
+      Schema.annotateKey({
+        title: "ACP bridge arguments",
+        description: "Arguments passed to the launcher. The default pins the tested pi-acp bridge.",
+        providerSettingsForm: {
+          placeholder: "-y pi-acp@0.0.32",
+          clearWhenEmpty: "omit",
+        },
+      }),
+    ),
+    customModels: Schema.Array(Schema.String).pipe(
+      Schema.withDecodingDefault(Effect.succeed([])),
+      Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
+    ),
+  },
+  {
+    order: ["binaryPath", "launchArgs"],
+  },
+);
+export type PiSettings = typeof PiSettings.Type;
+
 export const ObservabilitySettings = Schema.Struct({
   otlpTracesUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),
   otlpMetricsUrl: TrimmedString.pipe(Schema.withDecodingDefault(Effect.succeed(""))),

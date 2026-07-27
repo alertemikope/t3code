@@ -12,8 +12,12 @@
  * @module ProviderService
  */
 import type {
+  ProviderBindNativeSessionInput,
   ProviderInterruptTurnInput,
   ProviderInstanceId,
+  ProviderListNativeSessionsInput,
+  ProviderNativeSession,
+  ProviderNativeSessionError,
   ProviderRespondToRequestInput,
   ProviderRespondToUserInputInput,
   ProviderRuntimeEvent,
@@ -85,6 +89,16 @@ export interface ProviderServiceShape {
    * Aggregates runtime session lists from all registered adapters.
    */
   readonly listSessions: () => Effect.Effect<ReadonlyArray<ProviderSession>>;
+
+  /** List durable Ocean/Pi sessions through ACP `session/list`. */
+  readonly listNativeSessions: (
+    input: ProviderListNativeSessionsInput,
+  ) => Effect.Effect<ReadonlyArray<ProviderNativeSession>, ProviderNativeSessionError>;
+
+  /** Persist a provider-native resume cursor for a newly imported T3 thread. */
+  readonly bindNativeSession: (
+    input: ProviderBindNativeSessionInput,
+  ) => Effect.Effect<void, ProviderNativeSessionError>;
 
   /**
    * Read capabilities for the adapter bound to a configured provider instance.

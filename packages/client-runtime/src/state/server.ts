@@ -315,6 +315,23 @@ export function createServerEnvironmentAtoms<R, E>(
         key: ({ environmentId }) => environmentId,
       },
     }),
+    listProviderSessions: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:list-provider-sessions",
+      tag: WS_METHODS.serverListProviderSessions,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) =>
+          JSON.stringify([environmentId, input.providerInstanceId, input.cwd ?? null]),
+      },
+    }),
+    bindProviderSession: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:server:bind-provider-session",
+      tag: WS_METHODS.serverBindProviderSession,
+      concurrency: {
+        mode: "singleFlight",
+        key: ({ environmentId, input }) => JSON.stringify([environmentId, input.threadId]),
+      },
+    }),
     updateProvider: createEnvironmentRpcCommand(runtime, {
       label: "environment-data:server:update-provider",
       tag: WS_METHODS.serverUpdateProvider,

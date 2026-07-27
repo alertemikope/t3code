@@ -5,6 +5,7 @@ import * as NodePath from "node:path";
 
 import type {
   ProviderApprovalDecision,
+  ProviderNativeSession,
   ProviderRuntimeEvent,
   ProviderSendTurnInput,
   ProviderSession,
@@ -67,9 +68,11 @@ const asThreadId = (value: string): ThreadId => ThreadId.make(value);
 const asTurnId = (value: string): TurnId => TurnId.make(value);
 const codexInstanceId = ProviderInstanceId.make("codex");
 const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
+const oceanInstanceId = ProviderInstanceId.make("ocean");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
+const OCEAN_DRIVER = ProviderDriverKind.make("ocean");
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -163,6 +166,18 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     (): Effect.Effect<ReadonlyArray<ProviderSession>> =>
       Effect.sync(() => Array.from(sessions.values())),
   );
+  const listNativeSessions = vi.fn(
+    (cwd?: string): Effect.Effect<ReadonlyArray<ProviderNativeSession>, ProviderAdapterError> =>
+      Effect.succeed([
+        {
+          provider,
+          providerInstanceId: ProviderInstanceId.make(String(provider)),
+          sessionId: `${provider}-native-session`,
+          cwd: cwd ?? "/tmp/native-project",
+          title: `${provider} native session`,
+        },
+      ]),
+  );
 
   const hasSession = vi.fn(
     (threadId: ThreadId): Effect.Effect<boolean> => Effect.succeed(sessions.has(threadId)),
@@ -211,6 +226,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     respondToUserInput,
     stopSession,
     listSessions,
+    listNativeSessions,
     hasSession,
     readThread,
     rollbackThread,
@@ -246,6 +262,7 @@ function makeFakeCodexAdapter(provider: ProviderDriverKind = CODEX_DRIVER) {
     respondToUserInput,
     stopSession,
     listSessions,
+    listNativeSessions,
     hasSession,
     readThread,
     rollbackThread,
@@ -271,10 +288,12 @@ function makeProviderServiceLayer() {
   const codex = makeFakeCodexAdapter();
   const claude = makeFakeCodexAdapter(CLAUDE_AGENT_DRIVER);
   const cursor = makeFakeCodexAdapter(CURSOR_DRIVER);
+  const ocean = makeFakeCodexAdapter(OCEAN_DRIVER);
   const registry = makeAdapterRegistryMock({
     [ProviderDriverKind.make("codex")]: codex.adapter,
     [ProviderDriverKind.make("claudeAgent")]: claude.adapter,
     [ProviderDriverKind.make("cursor")]: cursor.adapter,
+    [ProviderDriverKind.make("ocean")]: ocean.adapter,
   });
 
   const providerAdapterLayer = Layer.succeed(
@@ -311,6 +330,7 @@ function makeProviderServiceLayer() {
     codex,
     claude,
     cursor,
+    ocean,
     layer,
   };
 }
@@ -841,6 +861,67 @@ it.effect(
 );
 
 routing.layer("ProviderServiceLive routing", (it) => {
+  it.effect("lists and resumes an imported Ocean native session", () =>
+    Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      const threadId = asThreadId("thread-ocean-import");
+
+      const sessions = yield* provider.listNativeSessions({
+        providerInstanceId: oceanInstanceId,
+        cwd: "/tmp/ocean-project",
+      });
+      assert.deepEqual(sessions, [
+        {
+          provider: OCEAN_DRIVER,
+          providerInstanceId: oceanInstanceId,
+          sessionId: "ocean-native-session",
+          cwd: "/tmp/ocean-project",
+          title: "ocean native session",
+        },
+      ]);
+
+      yield* provider.bindNativeSession({
+        threadId,
+        providerInstanceId: oceanInstanceId,
+        sessionId: "ocean-native-session",
+        cwd: "/tmp/ocean-project",
+        runtimeMode: "full-access",
+      });
+      const binding = Option.getOrThrow(yield* directory.getBinding(threadId));
+      assert.equal(binding.provider, OCEAN_DRIVER);
+      assert.equal(binding.providerInstanceId, oceanInstanceId);
+      assert.deepEqual(binding.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "ocean-native-session",
+      });
+
+      routing.ocean.startSession.mockClear();
+      yield* provider.startSession(threadId, {
+        threadId,
+        provider: OCEAN_DRIVER,
+        providerInstanceId: oceanInstanceId,
+        modelSelection: createModelSelection(oceanInstanceId, "gpt-5.6-sol", [
+          { id: "reasoningEffort", value: "xhigh" },
+        ]),
+        runtimeMode: "full-access",
+      });
+      assert.equal(routing.ocean.startSession.mock.calls.length, 1);
+      const startInput = routing.ocean.startSession.mock.calls[0]?.[0];
+      assert.equal(startInput?.cwd, "/tmp/ocean-project");
+      assert.deepEqual(startInput?.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "ocean-native-session",
+      });
+      assert.deepEqual(startInput?.modelSelection, {
+        instanceId: oceanInstanceId,
+        model: "gpt-5.6-sol",
+        options: [{ id: "reasoningEffort", value: "xhigh" }],
+      });
+      yield* provider.stopSession({ threadId });
+    }),
+  );
+
   it.effect("routes provider operations and rollback conversation", () =>
     Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
