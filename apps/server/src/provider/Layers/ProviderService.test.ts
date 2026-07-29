@@ -730,6 +730,82 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
+it.effect("ProviderServiceLive restores one listener per imported Ocean session on startup", () =>
+  Effect.gen(function* () {
+    const tempDir = NodeFS.mkdtempSync(
+      NodePath.join(NodeOS.tmpdir(), "t3-provider-ocean-restore-"),
+    );
+    const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
+    const ocean = makeFakeCodexAdapter(OCEAN_DRIVER);
+    const registry = makeAdapterRegistryMock({
+      [OCEAN_DRIVER]: ocean.adapter,
+    });
+    const persistenceLayer = makeSqlitePersistenceLive(dbPath);
+    const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
+      Layer.provide(persistenceLayer),
+    );
+    const directoryLayer = ProviderSessionDirectoryLive.pipe(Layer.provide(runtimeRepositoryLayer));
+
+    yield* Effect.gen(function* () {
+      const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
+      for (const [threadId, importedAt] of [
+        ["thread-ocean-original", "2026-01-01T00:00:00.000Z"],
+        ["thread-ocean-duplicate", "2026-01-02T00:00:00.000Z"],
+      ] as const) {
+        yield* directory.upsert({
+          provider: OCEAN_DRIVER,
+          providerInstanceId: oceanInstanceId,
+          threadId: asThreadId(threadId),
+          status: "stopped",
+          resumeCursor: {
+            schemaVersion: 1,
+            sessionId: "ocean-native-shared",
+          },
+          runtimeMode: "full-access",
+          runtimePayload: {
+            cwd: "/tmp/ocean-imported",
+            importedNativeSessionId: "ocean-native-shared",
+            importedAt,
+          },
+        });
+      }
+    }).pipe(Effect.provide(directoryLayer));
+
+    const providerLayer = makeProviderServiceLive().pipe(
+      Layer.provide(Layer.succeed(ProviderAdapterRegistry.ProviderAdapterRegistry, registry)),
+      Layer.provide(directoryLayer),
+      Layer.provide(defaultServerSettingsLayer),
+      Layer.provide(AnalyticsService.layerTest),
+      Layer.provide(
+        Layer.succeed(
+          ProviderEventLoggers.ProviderEventLoggers,
+          ProviderEventLoggers.NoOpProviderEventLoggers,
+        ),
+      ),
+    );
+
+    yield* Effect.gen(function* () {
+      const provider = yield* ProviderService.ProviderService;
+      yield* provider.restoreImportedSessions?.() ?? Effect.void;
+      assert.equal(ocean.startSession.mock.calls.length, 1);
+      assert.deepEqual(ocean.startSession.mock.calls[0]?.[0], {
+        threadId: asThreadId("thread-ocean-original"),
+        provider: OCEAN_DRIVER,
+        providerInstanceId: oceanInstanceId,
+        cwd: "/tmp/ocean-imported",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: "ocean-native-shared",
+        },
+        importHistory: true,
+        runtimeMode: "full-access",
+      });
+    }).pipe(Effect.provide(providerLayer), Effect.scoped);
+
+    NodeFS.rmSync(tempDir, { recursive: true, force: true });
+  }).pipe(Effect.provide(NodeServices.layer)),
+);
+
 it.effect(
   "ProviderServiceLive restores rollback routing after restart using persisted thread mapping",
   () =>

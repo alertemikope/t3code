@@ -101,6 +101,12 @@ export interface ProviderServiceShape {
   ) => Effect.Effect<void, ProviderNativeSessionError>;
 
   /**
+   * Reconnect durable imported sessions after runtime event consumers have
+   * subscribed, so their replay and future cross-surface updates are observed.
+   */
+  readonly restoreImportedSessions?: () => Effect.Effect<void>;
+
+  /**
    * Read capabilities for the adapter bound to a configured provider instance.
    */
   readonly getCapabilities: (

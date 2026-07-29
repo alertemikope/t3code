@@ -1867,6 +1867,9 @@ const make = Effect.gen(function* () {
           return worker.enqueue({ source: "domain", event });
         }),
       );
+      if (providerService.restoreImportedSessions) {
+        yield* providerService.restoreImportedSessions();
+      }
     });
 
   return {

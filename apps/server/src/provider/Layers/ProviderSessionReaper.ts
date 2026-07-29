@@ -16,6 +16,22 @@ import { ProviderService } from "../Services/ProviderService.ts";
 const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
+function isImportedOceanSession(binding: {
+  readonly provider: string;
+  readonly runtimePayload?: unknown | null;
+}): boolean {
+  if (binding.provider !== "ocean") {
+    return false;
+  }
+  const payload = binding.runtimePayload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const sessionId =
+    "importedNativeSessionId" in payload ? payload.importedNativeSessionId : undefined;
+  return typeof sessionId === "string" && sessionId.trim().length > 0;
+}
+
 export interface ProviderSessionReaperLiveOptions {
   readonly inactivityThresholdMs?: number;
   readonly sweepIntervalMs?: number;
@@ -40,6 +56,12 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
 
       for (const binding of bindings) {
         if (binding.status === "stopped") {
+          continue;
+        }
+        if (isImportedOceanSession(binding)) {
+          yield* Effect.logDebug("provider.session.reaper.skipped_imported_ocean", {
+            threadId: binding.threadId,
+          });
           continue;
         }
 

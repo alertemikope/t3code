@@ -165,17 +165,31 @@ function readPersistedCwd(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function isImportedNativeSession(
+function importedNativeSessionId(
   runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
-): boolean {
+): string | undefined {
   if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
-    return false;
+    return undefined;
   }
-  const importedNativeSessionId =
+  const rawSessionId =
     "importedNativeSessionId" in runtimePayload
       ? runtimePayload.importedNativeSessionId
       : undefined;
-  return typeof importedNativeSessionId === "string" && importedNativeSessionId.trim().length > 0;
+  if (typeof rawSessionId !== "string") {
+    return undefined;
+  }
+  const trimmed = rawSessionId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function importedNativeSessionTimestamp(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): string {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return "";
+  }
+  const rawTimestamp = "importedAt" in runtimePayload ? runtimePayload.importedAt : undefined;
+  return typeof rawTimestamp === "string" ? rawTimestamp : "";
 }
 
 const dieOnMissingBindingInstanceId = (
@@ -413,7 +427,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
       const shouldRefreshImportedOceanHistory =
-        input.binding.provider === "ocean" && isImportedNativeSession(input.binding.runtimePayload);
+        input.binding.provider === "ocean" &&
+        importedNativeSessionId(input.binding.runtimePayload) !== undefined;
 
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
@@ -1160,6 +1175,54 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   });
 
+  const restoreImportedOceanSessions = Effect.gen(function* () {
+    const bindings = yield* directory.listBindings();
+    const restoredNativeSessionIds = new Set<string>();
+    const importedOceanBindings = bindings
+      .filter(
+        (binding) =>
+          binding.provider === "ocean" &&
+          importedNativeSessionId(binding.runtimePayload) !== undefined,
+      )
+      .toSorted((left, right) =>
+        importedNativeSessionTimestamp(left.runtimePayload).localeCompare(
+          importedNativeSessionTimestamp(right.runtimePayload),
+        ),
+      );
+
+    for (const binding of importedOceanBindings) {
+      const nativeSessionId = importedNativeSessionId(binding.runtimePayload);
+      if (!nativeSessionId || restoredNativeSessionIds.has(nativeSessionId)) {
+        continue;
+      }
+      restoredNativeSessionIds.add(nativeSessionId);
+      yield* recoverSessionForThread({
+        binding,
+        operation: "ProviderService.restoreImportedOceanSessions",
+      }).pipe(
+        Effect.tap(() =>
+          Effect.logInfo("provider.imported_ocean_session.restored", {
+            threadId: binding.threadId,
+            nativeSessionId,
+          }),
+        ),
+        Effect.catchCause((cause) =>
+          Effect.logWarning("provider.imported_ocean_session.restore_failed", {
+            threadId: binding.threadId,
+            nativeSessionId,
+            cause,
+          }),
+        ),
+      );
+    }
+  }).pipe(
+    Effect.catchCause((cause) =>
+      Effect.logWarning("provider.imported_ocean_sessions.restore_failed", {
+        cause,
+      }),
+    ),
+  );
+
   const runStopAll = Effect.fn("runStopAll")(function* () {
     const threadIds = yield* directory.listThreadIds();
     const currentAdapters = yield* getAdapterEntries;
@@ -1230,6 +1293,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     listNativeSessions,
     bindNativeSession,
+    restoreImportedSessions: () => restoreImportedOceanSessions,
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,

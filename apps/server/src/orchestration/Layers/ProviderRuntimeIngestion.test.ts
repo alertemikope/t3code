@@ -96,6 +96,7 @@ function isLegacyTurnCompletedEvent(
 function createProviderServiceHarness() {
   const runtimeEventPubSub = Effect.runSync(PubSub.unbounded<ProviderRuntimeEvent>());
   const runtimeSessions: ProviderSession[] = [];
+  let restoreImportedSessionsCount = 0;
 
   const unsupported = () => Effect.die(new Error("Unsupported provider call in test")) as never;
   const service: ProviderServiceShape = {
@@ -108,6 +109,10 @@ function createProviderServiceHarness() {
     listSessions: () => Effect.succeed([...runtimeSessions]),
     listNativeSessions: () => unsupported(),
     bindNativeSession: () => unsupported(),
+    restoreImportedSessions: () =>
+      Effect.sync(() => {
+        restoreImportedSessionsCount += 1;
+      }),
     getCapabilities: () => Effect.succeed({ sessionModelSwitch: "in-session" }),
     getInstanceInfo: (instanceId) => {
       const driverKind = ProviderDriverKind.make(String(instanceId));
@@ -160,6 +165,7 @@ function createProviderServiceHarness() {
     service,
     emit,
     setSession,
+    getRestoreImportedSessionsCount: () => restoreImportedSessionsCount,
   };
 }
 
@@ -317,9 +323,15 @@ describe("ProviderRuntimeIngestion", () => {
       readModel: () => Effect.runPromise(snapshotQuery.getSnapshot()),
       emit: provider.emit,
       setProviderSession: provider.setSession,
+      getRestoreImportedSessionsCount: provider.getRestoreImportedSessionsCount,
       drain,
     };
   }
+
+  it("restores imported sessions only after runtime ingestion subscribes", async () => {
+    const harness = await createHarness();
+    expect(harness.getRestoreImportedSessionsCount()).toBe(1);
+  });
 
   it("maps turn started/completed events into thread session updates", async () => {
     const harness = await createHarness();
