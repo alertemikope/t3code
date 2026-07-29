@@ -49,7 +49,7 @@ import { ProviderModelPicker } from "../chat/ProviderModelPicker";
 import { TraitsPicker } from "../chat/TraitsPicker";
 import { isElectron } from "../../env";
 import { buildHostedChannelSelectionUrl, type HostedAppChannel } from "../../hostedPairing";
-import { useTheme } from "../../hooks/useTheme";
+import { type Theme, useTheme } from "../../hooks/useTheme";
 import { usePrimarySettings, useUpdatePrimarySettings } from "../../hooks/useSettings";
 import { useThreadActions } from "../../hooks/useThreadActions";
 import { useDesktopUpdateState } from "../../state/desktopUpdate";
@@ -112,16 +112,73 @@ const THEME_OPTIONS = [
   {
     value: "system",
     label: "System",
+    description: "Follow macOS",
+    preview: ["#fafafa", "#09090b"],
   },
   {
     value: "light",
     label: "Light",
+    description: "Clean zinc",
+    preview: ["#fafafa", "#e4e4e7"],
   },
   {
     value: "dark",
     label: "Dark",
+    description: "Pure black",
+    preview: ["#000000", "#191a1d"],
   },
-] as const;
+  {
+    value: "midnight",
+    label: "Midnight",
+    description: "Deep navy",
+    preview: ["#060a13", "#18233a"],
+  },
+  {
+    value: "graphite",
+    label: "Graphite",
+    description: "Soft charcoal",
+    preview: ["#111214", "#292c31"],
+  },
+  {
+    value: "aubergine",
+    label: "Aubergine",
+    description: "Muted violet",
+    preview: ["#100b14", "#2a1933"],
+  },
+  {
+    value: "forest",
+    label: "Forest",
+    description: "Deep green",
+    preview: ["#07100d", "#162a22"],
+  },
+] as const satisfies ReadonlyArray<{
+  readonly value: Theme;
+  readonly label: string;
+  readonly description: string;
+  readonly preview: readonly [string, string];
+}>;
+
+function ThemeSwatch({
+  preview,
+  size = "compact",
+}: {
+  readonly preview: readonly [string, string];
+  readonly size?: "compact" | "large";
+}) {
+  return (
+    <span
+      aria-hidden="true"
+      className={
+        size === "large"
+          ? "size-8 shrink-0 rounded-lg ring-1 ring-black/10 ring-inset dark:ring-white/10"
+          : "size-4 shrink-0 rounded-sm ring-1 ring-black/10 ring-inset dark:ring-white/10"
+      }
+      style={{
+        background: `linear-gradient(135deg, ${preview[0]} 0 50%, ${preview[1]} 50% 100%)`,
+      }}
+    />
+  );
+}
 
 const TIMESTAMP_FORMAT_LABELS = {
   locale: "System default",
@@ -517,6 +574,7 @@ export function useSettingsRestore(onRestored?: () => void) {
 
 export function GeneralSettingsPanel() {
   const { theme, setTheme } = useTheme();
+  const selectedTheme = THEME_OPTIONS.find((option) => option.value === theme) ?? THEME_OPTIONS[0];
   const settings = usePrimarySettings();
   const updateSettings = useUpdatePrimarySettings();
   const lastEnabledProjectGroupingMode = useRef<SidebarProjectGroupingMode>(
@@ -576,20 +634,26 @@ export function GeneralSettingsPanel() {
             <Select
               value={theme}
               onValueChange={(value) => {
-                if (value === "system" || value === "light" || value === "dark") {
-                  setTheme(value);
-                }
+                const option = THEME_OPTIONS.find((candidate) => candidate.value === value);
+                if (option) setTheme(option.value);
               }}
             >
-              <SelectTrigger className="w-full sm:w-40" aria-label="Theme preference">
-                <SelectValue>
-                  {THEME_OPTIONS.find((option) => option.value === theme)?.label ?? "System"}
+              <SelectTrigger className="w-full sm:w-48" aria-label="Theme preference">
+                <SelectValue className="flex items-center gap-2">
+                  <ThemeSwatch preview={selectedTheme.preview} />
+                  <span>{selectedTheme.label}</span>
                 </SelectValue>
               </SelectTrigger>
-              <SelectPopup align="end" alignItemWithTrigger={false}>
+              <SelectPopup className="min-w-64" align="end" alignItemWithTrigger={false}>
                 {THEME_OPTIONS.map((option) => (
                   <SelectItem hideIndicator key={option.value} value={option.value}>
-                    {option.label}
+                    <span className="flex min-w-0 items-center gap-3 py-0.5">
+                      <ThemeSwatch preview={option.preview} size="large" />
+                      <span className="flex min-w-0 flex-col">
+                        <span className="font-medium text-foreground">{option.label}</span>
+                        <span className="text-xs text-muted-foreground">{option.description}</span>
+                      </span>
+                    </span>
                   </SelectItem>
                 ))}
               </SelectPopup>

@@ -949,6 +949,131 @@ html[data-mobile-composer-route-transition="true"]::view-transition-old(t3-mobil
   --sidebar-stage-fade: var(--card);
 }
 
+/* Dark palette variants. The semantic tokens remain shared with the default
+   dark theme, while each palette controls the base surface hierarchy, text,
+   borders, and focus color. Keeping the mapping token-based means existing
+   components inherit new themes without theme-specific utility classes. */
+.dark[data-theme="midnight"] {
+  --theme-background: #060a13;
+  --theme-card: #0a1020;
+  --theme-popover: #0e1628;
+  --theme-accent: #18233a;
+  --theme-muted: #101827;
+  --theme-foreground: #e7edf8;
+  --theme-muted-foreground: #95a3bc;
+  --theme-border: rgb(143 166 211 / 13%);
+  --theme-input: rgb(143 166 211 / 19%);
+  --theme-primary: #8298ff;
+  --theme-primary-foreground: #070b16;
+}
+
+.dark[data-theme="graphite"] {
+  --theme-background: #111214;
+  --theme-card: #15171a;
+  --theme-popover: #1a1c20;
+  --theme-accent: #292c31;
+  --theme-muted: #1d1f23;
+  --theme-foreground: #f0f1f3;
+  --theme-muted-foreground: #9b9fa8;
+  --theme-border: rgb(255 255 255 / 9%);
+  --theme-input: rgb(255 255 255 / 15%);
+  --theme-primary: #8ca7ff;
+  --theme-primary-foreground: #0e1118;
+}
+
+.dark[data-theme="aubergine"] {
+  --theme-background: #100b14;
+  --theme-card: #160f1d;
+  --theme-popover: #1d1426;
+  --theme-accent: #2a1933;
+  --theme-muted: #211629;
+  --theme-foreground: #f2eaf6;
+  --theme-muted-foreground: #ae9bb6;
+  --theme-border: rgb(211 175 232 / 13%);
+  --theme-input: rgb(211 175 232 / 20%);
+  --theme-primary: #c09cff;
+  --theme-primary-foreground: #160b20;
+}
+
+.dark[data-theme="forest"] {
+  --theme-background: #07100d;
+  --theme-card: #0b1612;
+  --theme-popover: #102019;
+  --theme-accent: #162a22;
+  --theme-muted: #112119;
+  --theme-foreground: #e5f3ec;
+  --theme-muted-foreground: #93aa9d;
+  --theme-border: rgb(139 212 173 / 13%);
+  --theme-input: rgb(139 212 173 / 20%);
+  --theme-primary: #6fd3a2;
+  --theme-primary-foreground: #06140d;
+}
+
+.dark:is(
+  [data-theme="midnight"],
+  [data-theme="graphite"],
+  [data-theme="aubergine"],
+  [data-theme="forest"]
+) {
+  --background: var(--theme-background);
+  --app-chrome-background: var(--theme-background);
+  --surface-raised: var(--theme-muted);
+  --foreground: var(--theme-foreground);
+  --card: var(--theme-card);
+  --card-foreground: var(--theme-foreground);
+  --popover: var(--theme-popover);
+  --popover-foreground: var(--theme-foreground);
+  --primary: var(--theme-primary);
+  --primary-foreground: var(--theme-primary-foreground);
+  --secondary: var(--theme-muted);
+  --secondary-foreground: var(--theme-foreground);
+  --muted: var(--theme-muted);
+  --muted-foreground: var(--theme-muted-foreground);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-foreground);
+  --border: var(--theme-border);
+  --input: var(--theme-input);
+  --ring: var(--theme-primary);
+  --sidebar: var(--theme-card);
+  --sidebar-foreground: var(--theme-foreground);
+  --sidebar-muted-foreground: var(--theme-muted-foreground);
+  --sidebar-control-surface: var(--theme-muted);
+  --sidebar-row-hover: color-mix(in srgb, var(--theme-foreground) 7%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--theme-foreground) 10%, transparent);
+  --sidebar-row-selected: color-mix(in srgb, var(--theme-foreground) 6%, transparent);
+  --sidebar-border: var(--theme-border);
+  --sidebar-stage-fade: var(--theme-card);
+}
+
+.dark:is(
+    [data-theme="midnight"],
+    [data-theme="graphite"],
+    [data-theme="aubergine"],
+    [data-theme="forest"]
+  )
+  :is([data-sidebar-version="v1"], [data-sidebar-version="v2"]) {
+  --background: var(--theme-background);
+  --foreground: var(--theme-foreground);
+  --card: var(--theme-card);
+  --card-foreground: var(--theme-foreground);
+  --accent: var(--theme-accent);
+  --accent-foreground: var(--theme-foreground);
+  --muted: var(--theme-muted);
+  --muted-foreground: var(--theme-muted-foreground);
+  --border: var(--theme-border);
+  --input: var(--theme-input);
+  --sidebar: var(--theme-card);
+  --sidebar-foreground: var(--theme-foreground);
+  --sidebar-muted-foreground: var(--theme-muted-foreground);
+  --sidebar-control-surface: var(--theme-muted);
+  --sidebar-row-hover: color-mix(in srgb, var(--theme-foreground) 7%, transparent);
+  --sidebar-row-active: color-mix(in srgb, var(--theme-foreground) 10%, transparent);
+  --sidebar-row-selected: color-mix(in srgb, var(--theme-foreground) 6%, transparent);
+  --sidebar-border: var(--theme-border);
+  --sidebar-stage-fade: var(--theme-card);
+  background-color: var(--theme-card);
+}
+
 body {
   font-family:
     "DM Sans Variable",

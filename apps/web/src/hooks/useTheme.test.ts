@@ -84,6 +84,7 @@ describe("theme failure handling", () => {
     vi.stubGlobal("document", {
       documentElement: {
         classList: { toggle: vi.fn() },
+        setAttribute: vi.fn(),
       },
     });
 
@@ -151,6 +152,30 @@ describe("theme failure handling", () => {
     expect(getItem).toHaveBeenCalledTimes(2);
     expect(errorLog).toHaveBeenCalledTimes(2);
     unsubscribe?.();
+  });
+
+  it("persists dark palette variants and maps them to the native dark shell", async () => {
+    const storage = createStorage();
+    const setTheme = vi.fn().mockResolvedValue(undefined);
+    vi.stubGlobal("window", {
+      desktopBridge: { setTheme },
+      localStorage: storage,
+    });
+
+    const {
+      readThemePreference,
+      resolveDesktopTheme,
+      syncDesktopThemePreference,
+      writeThemePreference,
+    } = await import("./useTheme");
+
+    writeThemePreference("aubergine");
+    expect(readThemePreference()).toBe("aubergine");
+    expect(resolveDesktopTheme("aubergine")).toBe("dark");
+    expect(resolveDesktopTheme("system")).toBe("system");
+
+    await syncDesktopThemePreference({ setTheme }, "forest");
+    expect(setTheme).toHaveBeenCalledWith("dark");
   });
 
   it("preserves desktop sync causes and retries after a failed cosmetic sync", async () => {
