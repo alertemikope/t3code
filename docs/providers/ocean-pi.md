@@ -35,8 +35,17 @@ default is `high`.
 
 ## Import an existing session
 
-In **Settings → Providers**, press the import button next to **Add provider
-instance**.
+When a folder is added as a project, T3 automatically discovers matching
+Ocean/Pi sessions and restores them as threads if that project does not already
+contain T3 threads. Re-adding an existing empty project triggers the same
+recovery flow.
+
+Automatic recovery keeps the native provider session as the source of truth
+and projects its visible transcript into T3 once. Later session resumes filter
+the provider replay, so restarting T3 does not duplicate imported messages.
+
+For a manual import, open **Settings → Providers** and press the import button
+next to **Add provider instance**.
 
 1. Select the Ocean or Pi instance.
 2. Select a native session returned by ACP `session/list`.

@@ -566,6 +566,50 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("forwards session/load transcript events for a one-time native import", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 5)));
+      expect(notes.map((note) => note._tag)).toEqual([
+        "ToolCallUpdated",
+        "AssistantItemStarted",
+        "ContentDelta",
+        "AssistantItemCompleted",
+        "UserContentDelta",
+      ]);
+      expect(
+        notes.some(
+          (note) => note._tag === "ContentDelta" && note.text === "replayed assistant text",
+        ),
+      ).toBe(true);
+      expect(notes.some((note) => note._tag === "UserContentDelta" && note.text === "replay")).toBe(
+        true,
+      );
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              T3_ACP_EMIT_LOAD_REPLAY: "1",
+            },
+          },
+          cwd: process.cwd(),
+          resumeSessionId: "mock-session-1",
+          importSessionHistory: true,
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+      TestClock.withLive,
+    ),
+  );
+
   it.effect("completes session/load after replay becomes idle while its RPC stays pending", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;

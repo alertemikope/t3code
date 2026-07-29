@@ -108,6 +108,12 @@ export type AcpParsedSessionEvent =
       readonly itemId?: string;
       readonly text: string;
       readonly rawPayload: unknown;
+    }
+  | {
+      readonly _tag: "UserContentDelta";
+      readonly itemId?: string;
+      readonly text: string;
+      readonly rawPayload: unknown;
     };
 
 type AcpSessionSetupResponse =
@@ -568,6 +574,18 @@ export function parseSessionUpdateEvent(params: EffectAcpSchema.SessionNotificat
       if (upd.content.type === "text" && upd.content.text.length > 0) {
         events.push({
           _tag: "ContentDelta",
+          ...(upd.messageId ? { itemId: upd.messageId } : {}),
+          text: upd.content.text,
+          rawPayload: params,
+        });
+      }
+      break;
+    }
+    case "user_message_chunk": {
+      if (upd.content.type === "text" && upd.content.text.length > 0) {
+        events.push({
+          _tag: "UserContentDelta",
+          ...(upd.messageId ? { itemId: upd.messageId } : {}),
           text: upd.content.text,
           rawPayload: params,
         });

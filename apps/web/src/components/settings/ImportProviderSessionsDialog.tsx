@@ -169,15 +169,16 @@ export function ImportProviderSessionsDialog({
     setError(null);
     const threadId = newThreadId();
     const title = nativeSessionTitle(selectedSession);
+    const modelSelection = createModelSelection(activeProvider.instanceId, model, [
+      { id: "reasoningEffort", value: thinking },
+    ]);
     const createResult = await createThread({
       environmentId,
       input: {
         threadId,
         projectId,
         title,
-        modelSelection: createModelSelection(activeProvider.instanceId, model, [
-          { id: "reasoningEffort", value: thinking },
-        ]),
+        modelSelection,
         runtimeMode: "full-access",
         interactionMode: "default",
         branch: null,
@@ -199,6 +200,7 @@ export function ImportProviderSessionsDialog({
         providerInstanceId: activeProvider.instanceId,
         sessionId: selectedSession.sessionId,
         cwd: selectedSession.cwd,
+        modelSelection,
         runtimeMode: "full-access",
       },
     });

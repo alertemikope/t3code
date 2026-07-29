@@ -881,11 +881,16 @@ routing.layer("ProviderServiceLive routing", (it) => {
         },
       ]);
 
+      routing.ocean.startSession.mockClear();
+      const modelSelection = createModelSelection(oceanInstanceId, "gpt-5.6-sol", [
+        { id: "reasoningEffort", value: "xhigh" },
+      ]);
       yield* provider.bindNativeSession({
         threadId,
         providerInstanceId: oceanInstanceId,
         sessionId: "ocean-native-session",
         cwd: "/tmp/ocean-project",
+        modelSelection,
         runtimeMode: "full-access",
       });
       const binding = Option.getOrThrow(yield* directory.getBinding(threadId));
@@ -896,28 +901,15 @@ routing.layer("ProviderServiceLive routing", (it) => {
         sessionId: "ocean-native-session",
       });
 
-      routing.ocean.startSession.mockClear();
-      yield* provider.startSession(threadId, {
-        threadId,
-        provider: OCEAN_DRIVER,
-        providerInstanceId: oceanInstanceId,
-        modelSelection: createModelSelection(oceanInstanceId, "gpt-5.6-sol", [
-          { id: "reasoningEffort", value: "xhigh" },
-        ]),
-        runtimeMode: "full-access",
-      });
       assert.equal(routing.ocean.startSession.mock.calls.length, 1);
       const startInput = routing.ocean.startSession.mock.calls[0]?.[0];
       assert.equal(startInput?.cwd, "/tmp/ocean-project");
+      assert.equal(startInput?.importHistory, true);
       assert.deepEqual(startInput?.resumeCursor, {
         schemaVersion: 1,
         sessionId: "ocean-native-session",
       });
-      assert.deepEqual(startInput?.modelSelection, {
-        instanceId: oceanInstanceId,
-        model: "gpt-5.6-sol",
-        options: [{ id: "reasoningEffort", value: "xhigh" }],
-      });
+      assert.deepEqual(startInput?.modelSelection, modelSelection);
       yield* provider.stopSession({ threadId });
     }),
   );

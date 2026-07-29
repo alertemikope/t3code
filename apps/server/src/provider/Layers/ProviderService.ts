@@ -1075,6 +1075,26 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
             }),
         ),
       );
+    yield* startSession(input.threadId, {
+      threadId: input.threadId,
+      provider: info.driverKind,
+      providerInstanceId: input.providerInstanceId,
+      cwd: input.cwd,
+      ...(input.modelSelection ? { modelSelection: input.modelSelection } : {}),
+      importHistory: true,
+      runtimeMode: input.runtimeMode,
+    }).pipe(
+      Effect.asVoid,
+      Effect.mapError(
+        (cause) =>
+          new ProviderNativeSessionError({
+            providerInstanceId: input.providerInstanceId,
+            operation: "session/import",
+            detail: "The native session was bound but its history could not be loaded.",
+            cause,
+          }),
+      ),
+    );
   });
 
   const getCapabilities: ProviderServiceMethod<"getCapabilities"> = (instanceId) =>

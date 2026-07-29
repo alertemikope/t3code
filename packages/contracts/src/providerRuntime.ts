@@ -79,6 +79,7 @@ const RuntimeItemStatus = Schema.Literals(["inProgress", "completed", "failed", 
 export type RuntimeItemStatus = typeof RuntimeItemStatus.Type;
 
 const RuntimeContentStreamKind = Schema.Literals([
+  "user_text",
   "assistant_text",
   "reasoning_text",
   "reasoning_summary_text",

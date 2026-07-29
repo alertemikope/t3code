@@ -61,6 +61,12 @@ export interface AcpSessionRuntimeOptions {
   readonly spawn: AcpSpawnInput;
   readonly cwd: string;
   readonly resumeSessionId?: string;
+  /**
+   * Forward the transcript notifications emitted during session/load.
+   * This is enabled only for a first-time native import; ordinary resumes keep
+   * the load gate as a duplicate-history filter.
+   */
+  readonly importSessionHistory?: boolean;
   readonly sessionLoadTimeout?: Duration.Input;
   readonly sessionLoadReplayIdleGap?: Duration.Input;
   readonly clientCapabilities?: EffectAcpSchema.InitializeRequest["clientCapabilities"];
@@ -384,6 +390,20 @@ export const make = (
               lastActivityAtMillis,
             }),
           );
+          if (
+            options.importSessionHistory === true &&
+            options.resumeSessionId !== undefined &&
+            notification.sessionId === options.resumeSessionId
+          ) {
+            yield* handleSessionUpdate({
+              queue: eventQueue,
+              modeStateRef,
+              toolCallsRef,
+              assistantSegmentRef,
+              assistantItemRuntimeId,
+              params: notification,
+            });
+          }
           return;
         }
         if (sessionUpdateIsReplay(notification)) {
@@ -635,8 +655,30 @@ export const make = (
             ),
           );
 
+          if (options.importSessionHistory === true) {
+            const responseAtMillis = yield* Clock.currentTimeMillis;
+            yield* Ref.update(sessionLoadGateRef, (gate) =>
+              Option.map(gate, (value) => ({
+                ...value,
+                lastActivityAtMillis: value.lastActivityAtMillis ?? responseAtMillis,
+              })),
+            );
+            // Some ACP transports resolve session/load before their previously
+            // written replay notifications have reached the notification
+            // handler. Keep the load gate open through one idle window so the
+            // one-time import cannot lose that tail.
+            yield* waitForSessionLoadReplayIdle({
+              gateRef: sessionLoadGateRef,
+            });
+          }
           return loaded;
         }).pipe(Effect.ensuring(Ref.set(sessionLoadGateRef, Option.none())));
+        if (options.importSessionHistory === true) {
+          yield* closeActiveAssistantSegment({
+            queue: eventQueue,
+            assistantSegmentRef,
+          });
+        }
       } else {
         const createPayload = {
           cwd: options.cwd,
@@ -871,6 +913,14 @@ const handleSessionUpdate = ({
       );
     }
     for (const event of parsed.events) {
+      if (event._tag === "UserContentDelta") {
+        yield* closeActiveAssistantSegment({
+          queue,
+          assistantSegmentRef,
+        });
+        yield* Queue.offer(queue, event);
+        continue;
+      }
       if (event._tag === "ToolCallUpdated") {
         yield* closeActiveAssistantSegment({
           queue,

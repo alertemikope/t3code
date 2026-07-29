@@ -891,6 +891,38 @@ describe("ProviderRuntimeIngestion", () => {
     );
   });
 
+  it("projects imported ACP user history without starting a provider turn", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+
+    harness.emit({
+      type: "content.delta",
+      eventId: asEventId("evt-imported-user-message"),
+      provider: ProviderDriverKind.make("ocean"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      itemId: asItemId("native-user-message"),
+      payload: {
+        streamKind: "user_text",
+        delta: "historical question",
+      },
+    });
+
+    const thread = await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "user:native-user-message" &&
+          message.role === "user" &&
+          message.text === "historical question",
+      ),
+    );
+    const importedMessage = thread.messages.find(
+      (message: ProviderRuntimeTestMessage) => message.id === "user:native-user-message",
+    );
+    expect(importedMessage?.turnId).toBeNull();
+    expect(thread.session?.activeTurnId ?? null).toBeNull();
+  });
+
   it("maps canonical content delta/item completed into finalized assistant messages", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

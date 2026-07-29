@@ -1457,8 +1457,23 @@ const make = Effect.gen(function* () {
         event.type === "content.delta" && event.payload.streamKind === "assistant_text"
           ? event.payload.delta
           : undefined;
+      const importedUserText =
+        event.type === "content.delta" && event.payload.streamKind === "user_text"
+          ? event.payload.delta
+          : undefined;
       const proposedPlanDelta =
         event.type === "turn.proposed.delta" ? event.payload.delta : undefined;
+
+      if (importedUserText && importedUserText.length > 0) {
+        yield* orchestrationEngine.dispatch({
+          type: "thread.message.user.append",
+          commandId: yield* providerCommandId(event, "user-history-append"),
+          threadId: thread.id,
+          messageId: MessageId.make(`user:${event.itemId ?? event.eventId}`),
+          text: importedUserText,
+          createdAt: now,
+        });
+      }
 
       if (assistantDelta && assistantDelta.length > 0) {
         const turnId = toTurnId(event.turnId);

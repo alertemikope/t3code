@@ -11,11 +11,14 @@ import {
   type EnvironmentId,
   type FilesystemBrowseResult,
   type ProjectId,
+  type ServerProvider,
   type SourceControlDiscoveryResult,
   type SourceControlProviderKind,
   type SourceControlRepositoryInfo,
+  type ThreadId,
   PRIMARY_LOCAL_ENVIRONMENT_ID,
 } from "@t3tools/contracts";
+import { createModelSelection } from "@t3tools/shared/model";
 import { useNavigate, useParams } from "@tanstack/react-router";
 import * as Option from "effect/Option";
 import {
@@ -52,6 +55,7 @@ import { readLocalApi } from "../localApi";
 import { desktopLocalBackendId } from "../connection/desktopLocal";
 import { filesystemEnvironment } from "../state/filesystem";
 import { projectEnvironment } from "../state/projects";
+import { threadEnvironment } from "../state/threads";
 import { useEnvironmentQuery } from "../state/query";
 import { sourceControlEnvironment } from "../state/sourceControl";
 import { useAtomCommand } from "../state/use-atom-command";
@@ -77,7 +81,7 @@ import {
 import { onOpenCommandPalette } from "../commandPaletteBus";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { getLatestThreadForProject, sortThreads } from "../lib/threadSort";
-import { cn, isMacPlatform, isWindowsPlatform, newProjectId } from "../lib/utils";
+import { cn, isMacPlatform, isWindowsPlatform, newProjectId, newThreadId } from "../lib/utils";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { buildThreadRouteParams, resolveThreadRouteTarget } from "../threadRoutes";
 import {
@@ -109,7 +113,11 @@ import { CommandPaletteResults } from "./CommandPaletteResults";
 import { AzureDevOpsIcon, BitbucketIcon, GitHubIcon, GitLabIcon } from "./Icons";
 import { ProjectFavicon } from "./ProjectFavicon";
 import { ThreadRowLeadingStatus, ThreadRowTrailingStatus } from "./ThreadStatusIndicators";
-import { primaryServerKeybindingsAtom, primaryServerProvidersAtom } from "../state/server";
+import {
+  primaryServerKeybindingsAtom,
+  primaryServerProvidersAtom,
+  serverEnvironment,
+} from "../state/server";
 import { resolveDefaultProviderModelSelection } from "../providerInstances";
 import { resolveShortcutCommand, threadJumpIndexFromCommand } from "../keybindings";
 import {
@@ -132,6 +140,11 @@ import {
   buildSidebarProjectPickerEntries,
   buildSidebarProjectSnapshots,
 } from "../sidebarProjectGrouping";
+import {
+  importableNativeSessionProviders,
+  nativeSessionsForWorkspace,
+  nativeSessionTitle,
+} from "./settings/ImportProviderSessionsDialog.logic";
 
 const EMPTY_BROWSE_ENTRIES: FilesystemBrowseResult["entries"] = [];
 
@@ -481,6 +494,18 @@ function OpenCommandPaletteDialog(props: {
   const [highlightedItemValue, setHighlightedItemValue] = useState<string | null>(null);
   const clientSettings = useClientSettings();
   const createProject = useAtomCommand(projectEnvironment.create, {
+    reportFailure: false,
+  });
+  const createThread = useAtomCommand(threadEnvironment.create, {
+    reportFailure: false,
+  });
+  const deleteThread = useAtomCommand(threadEnvironment.delete, {
+    reportFailure: false,
+  });
+  const listProviderSessions = useAtomCommand(serverEnvironment.listProviderSessions, {
+    reportFailure: false,
+  });
+  const bindProviderSession = useAtomCommand(serverEnvironment.bindProviderSession, {
     reportFailure: false,
   });
   const lookupRepository = useAtomQueryRunner(sourceControlEnvironment.repository, {
@@ -1262,6 +1287,137 @@ function OpenCommandPaletteDialog(props: {
     threadSearchItems: allThreadItems,
   });
 
+  const importNativeSessionsForProject = useCallback(
+    async (input: {
+      readonly environmentId: EnvironmentId;
+      readonly projectId: ProjectId;
+      readonly workspaceRoot: string;
+      readonly providers: ReadonlyArray<ServerProvider>;
+    }) => {
+      const importedThreadIds: ThreadId[] = [];
+      const failures: string[] = [];
+
+      for (const provider of importableNativeSessionProviders(input.providers)) {
+        const model =
+          provider.models.find((entry) => entry.isDefault)?.slug ?? provider.models[0]?.slug;
+        if (!model) continue;
+
+        const listed = await listProviderSessions({
+          environmentId: input.environmentId,
+          input: {
+            providerInstanceId: provider.instanceId,
+            cwd: input.workspaceRoot,
+          },
+        });
+        if (listed._tag === "Failure") {
+          if (!isAtomCommandInterrupted(listed)) {
+            failures.push(errorMessage(squashAtomCommandFailure(listed)));
+          }
+          continue;
+        }
+
+        const nativeSessions = nativeSessionsForWorkspace(
+          listed.value.sessions,
+          input.workspaceRoot,
+        );
+        for (const nativeSession of nativeSessions) {
+          const threadId = newThreadId();
+          const modelSelection = createModelSelection(provider.instanceId, model, [
+            { id: "reasoningEffort", value: "high" },
+          ]);
+          const created = await createThread({
+            environmentId: input.environmentId,
+            input: {
+              threadId,
+              projectId: input.projectId,
+              title: nativeSessionTitle(nativeSession),
+              modelSelection,
+              runtimeMode: "full-access",
+              interactionMode: "default",
+              branch: null,
+              worktreePath: null,
+            },
+          });
+          if (created._tag === "Failure") {
+            if (!isAtomCommandInterrupted(created)) {
+              failures.push(errorMessage(squashAtomCommandFailure(created)));
+            }
+            continue;
+          }
+
+          const bound = await bindProviderSession({
+            environmentId: input.environmentId,
+            input: {
+              threadId,
+              providerInstanceId: provider.instanceId,
+              sessionId: nativeSession.sessionId,
+              cwd: nativeSession.cwd,
+              modelSelection,
+              runtimeMode: "full-access",
+            },
+          });
+          if (bound._tag === "Failure") {
+            await deleteThread({
+              environmentId: input.environmentId,
+              input: { threadId },
+            });
+            if (!isAtomCommandInterrupted(bound)) {
+              failures.push(errorMessage(squashAtomCommandFailure(bound)));
+            }
+            continue;
+          }
+          importedThreadIds.push(threadId);
+        }
+      }
+
+      return { importedThreadIds, failures };
+    },
+    [bindProviderSession, createThread, deleteThread, listProviderSessions],
+  );
+
+  const restoreNativeSessionsAndOpen = useCallback(
+    async (input: {
+      readonly environmentId: EnvironmentId;
+      readonly projectId: ProjectId;
+      readonly projectTitle: string;
+      readonly workspaceRoot: string;
+      readonly providers: ReadonlyArray<ServerProvider>;
+    }): Promise<boolean> => {
+      const restored = await importNativeSessionsForProject(input);
+      const latestThreadId = restored.importedThreadIds.at(-1);
+      if (!latestThreadId) {
+        if (restored.failures.length > 0) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "info",
+              title: "Existing sessions could not be restored",
+              description: restored.failures[0] ?? "Ocean/Pi session discovery failed.",
+            }),
+          );
+        }
+        return false;
+      }
+
+      toastManager.add(
+        stackedThreadToast({
+          type: "success",
+          title: "Existing sessions restored",
+          description: `${restored.importedThreadIds.length} Ocean/Pi conversation${
+            restored.importedThreadIds.length === 1 ? "" : "s"
+          } added to ${input.projectTitle}${
+            restored.failures.length > 0 ? " (one provider could not be read)" : ""
+          }.`,
+        }),
+      );
+      await navigate({
+        to: "/$environmentId/$threadId",
+        params: buildThreadRouteParams(scopeThreadRef(input.environmentId, latestThreadId)),
+      });
+      return true;
+    },
+    [importNativeSessionsForProject, navigate],
+  );
+
   const handleAddProjectForEnvironment = useCallback(
     async (input: {
       readonly environmentId: EnvironmentId;
@@ -1295,6 +1451,10 @@ function OpenCommandPaletteDialog(props: {
 
       const cwd = resolveProjectPathForDispatch(rawCwd, input.currentProjectCwd);
       if (cwd.length === 0) return;
+      const targetEnvironmentProviders =
+        environments.find((environment) => environment.environmentId === input.environmentId)
+          ?.serverConfig?.providers ??
+        (input.environmentId === primaryEnvironmentId ? providers : []);
 
       const existing = findProjectByPath(
         projects.filter((project) => project.environmentId === input.environmentId),
@@ -1314,6 +1474,17 @@ function OpenCommandPaletteDialog(props: {
             ),
           });
         } else {
+          const restored = await restoreNativeSessionsAndOpen({
+            environmentId: existing.environmentId,
+            projectId: existing.id,
+            projectTitle: existing.title,
+            workspaceRoot: existing.workspaceRoot,
+            providers: targetEnvironmentProviders,
+          });
+          if (restored) {
+            setOpen(false);
+            return;
+          }
           const navigationResult = await settlePromise(() =>
             handleNewThread(scopeProjectRef(existing.environmentId, existing.id)),
           );
@@ -1334,10 +1505,6 @@ function OpenCommandPaletteDialog(props: {
       }
 
       const projectId = newProjectId();
-      const targetEnvironmentProviders =
-        environments.find((environment) => environment.environmentId === input.environmentId)
-          ?.serverConfig?.providers ??
-        (input.environmentId === primaryEnvironmentId ? providers : []);
       const createResult = await createProject({
         environmentId: input.environmentId,
         input: {
@@ -1365,6 +1532,18 @@ function OpenCommandPaletteDialog(props: {
         return;
       }
 
+      const restored = await restoreNativeSessionsAndOpen({
+        environmentId: input.environmentId,
+        projectId,
+        projectTitle: inferProjectTitleFromPath(cwd),
+        workspaceRoot: cwd,
+        providers: targetEnvironmentProviders,
+      });
+      if (restored) {
+        setOpen(false);
+        return;
+      }
+
       const navigationResult = await settlePromise(() =>
         handleNewThread(scopeProjectRef(input.environmentId, projectId)),
       );
@@ -1389,6 +1568,7 @@ function OpenCommandPaletteDialog(props: {
       primaryEnvironmentId,
       projects,
       providers,
+      restoreNativeSessionsAndOpen,
       setOpen,
       clientSettings.sidebarThreadSortOrder,
       threads,

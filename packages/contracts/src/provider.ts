@@ -58,6 +58,12 @@ export const ProviderSessionStartInput = Schema.Struct({
   cwd: Schema.optional(TrimmedNonEmptyString),
   modelSelection: Schema.optional(ModelSelection),
   resumeCursor: Schema.optional(Schema.Unknown),
+  /**
+   * Re-project provider-native transcript notifications during this load.
+   * Import flows set this once; ordinary resumes leave it false so history is
+   * not duplicated after a restart.
+   */
+  importHistory: Schema.optional(Schema.Boolean),
   approvalPolicy: Schema.optional(ProviderApprovalPolicy),
   sandboxMode: Schema.optional(ProviderSandboxMode),
   runtimeMode: RuntimeMode,
@@ -121,6 +127,7 @@ export const ProviderBindNativeSessionInput = Schema.Struct({
   providerInstanceId: ProviderInstanceId,
   sessionId: TrimmedNonEmptyString,
   cwd: TrimmedNonEmptyString,
+  modelSelection: Schema.optional(ModelSelection),
   runtimeMode: RuntimeMode,
 });
 export type ProviderBindNativeSessionInput = typeof ProviderBindNativeSessionInput.Type;

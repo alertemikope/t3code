@@ -19,6 +19,40 @@ function normalizePath(value: string): string {
   return trimmed.replace(/\/+$/u, "");
 }
 
+export function nativeSessionBelongsToWorkspace(cwd: string, workspaceRoot: string): boolean {
+  const sessionPath = normalizePath(cwd);
+  const projectPath = normalizePath(workspaceRoot);
+  return sessionPath === projectPath || sessionPath.startsWith(`${projectPath}/`);
+}
+
+/**
+ * Keep only sessions owned by a project, de-duplicate provider results, and
+ * create the oldest entries first so the newest native conversation remains
+ * the newest T3 thread after a bulk import.
+ */
+export function nativeSessionsForWorkspace(
+  sessions: ReadonlyArray<ProviderNativeSession>,
+  workspaceRoot: string,
+): ReadonlyArray<ProviderNativeSession> {
+  const seen = new Set<string>();
+  return sessions
+    .filter((session) => {
+      if (
+        seen.has(session.sessionId) ||
+        !nativeSessionBelongsToWorkspace(session.cwd, workspaceRoot)
+      ) {
+        return false;
+      }
+      seen.add(session.sessionId);
+      return true;
+    })
+    .toSorted(
+      (left, right) =>
+        (left.updatedAt ?? "").localeCompare(right.updatedAt ?? "") ||
+        left.sessionId.localeCompare(right.sessionId),
+    );
+}
+
 export function importableNativeSessionProviders(
   providers: ReadonlyArray<ServerProvider>,
 ): ReadonlyArray<ServerProvider> {
@@ -55,7 +89,7 @@ export function resolveNativeSessionProject(
   const candidates = projects
     .filter((project) => project.environmentId === environmentId)
     .map((project) => ({ project, path: normalizePath(project.workspaceRoot) }))
-    .filter(({ path }) => sessionPath === path || sessionPath.startsWith(`${path}/`))
+    .filter(({ path }) => nativeSessionBelongsToWorkspace(sessionPath, path))
     .toSorted((left, right) => right.path.length - left.path.length);
   if (candidates[0]) return candidates[0].project.id;
   if (

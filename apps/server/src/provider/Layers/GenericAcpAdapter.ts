@@ -316,6 +316,9 @@ export function makeGenericAcpAdapter(
             childProcessSpawner,
             cwd,
             ...(resumeSessionId ? { resumeSessionId } : {}),
+            ...(resumeSessionId && input.importHistory === true
+              ? { importSessionHistory: true }
+              : {}),
             clientInfo: { name: "t3-code", version: "0.0.0" },
             ...(options.authMethodId ? { authMethodId: options.authMethodId } : {}),
             ...(options.clientCapabilities
@@ -516,6 +519,20 @@ export function makeGenericAcpAdapter(
                       }),
                     );
                     return;
+                  case "UserContentDelta":
+                    yield* offerRuntimeEvent(
+                      makeAcpContentDeltaEvent({
+                        stamp: yield* makeEventStamp(),
+                        provider: providerKind,
+                        threadId: context.threadId,
+                        turnId: undefined,
+                        ...(event.itemId ? { itemId: event.itemId } : {}),
+                        streamKind: "user_text",
+                        text: event.text,
+                        rawPayload: event.rawPayload,
+                      }),
+                    );
+                    return;
                   case "ContentDelta":
                     yield* offerRuntimeEvent(
                       makeAcpContentDeltaEvent({
@@ -545,6 +562,14 @@ export function makeGenericAcpAdapter(
           context.notificationFiber = notificationFiber;
           sessions.set(input.threadId, context);
           sessionScopeTransferred = true;
+
+          if (input.importHistory === true) {
+            // session/load can enqueue the entire native transcript before the
+            // adapter's event consumer is started. Wait for that backlog to be
+            // published before startSession returns, otherwise the importing
+            // request can complete while its child consumer is still pending.
+            yield* runtime.drainEvents;
+          }
 
           yield* offerRuntimeEvent({
             type: "session.started",

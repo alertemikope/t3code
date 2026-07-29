@@ -10,6 +10,8 @@ import { describe, expect, it } from "vite-plus/test";
 
 import {
   importableNativeSessionProviders,
+  nativeSessionBelongsToWorkspace,
+  nativeSessionsForWorkspace,
   nativeSessionTitle,
   resolveNativeSessionProject,
 } from "./ImportProviderSessionsDialog.logic";
@@ -71,5 +73,41 @@ describe("native provider session import", () => {
       "Jellyfin indexing",
     );
     expect(nativeSessionTitle(session)).toBe("jellyfin · abcdef12");
+  });
+
+  it("matches exact and nested workspaces without matching sibling paths", () => {
+    expect(nativeSessionBelongsToWorkspace("/work/Superhote", "/work/Superhote/")).toBe(true);
+    expect(nativeSessionBelongsToWorkspace("/work/Superhote/api", "/work/Superhote")).toBe(true);
+    expect(nativeSessionBelongsToWorkspace("/work/Superhote-old", "/work/Superhote")).toBe(false);
+  });
+
+  it("filters, de-duplicates, and orders workspace sessions from oldest to newest", () => {
+    const base = {
+      provider: ProviderDriverKind.make("ocean"),
+      providerInstanceId: ProviderInstanceId.make("ocean"),
+      cwd: "/work/Superhote",
+    };
+    const older = {
+      ...base,
+      sessionId: "older-session",
+      updatedAt: "2026-07-28T08:00:00.000Z",
+    } satisfies ProviderNativeSession;
+    const newer = {
+      ...base,
+      sessionId: "newer-session",
+      updatedAt: "2026-07-29T08:00:00.000Z",
+    } satisfies ProviderNativeSession;
+
+    expect(
+      nativeSessionsForWorkspace(
+        [
+          newer,
+          { ...older, cwd: "/work/Superhote/nested" },
+          newer,
+          { ...base, sessionId: "sibling", cwd: "/work/Superhote-old" },
+        ],
+        "/work/Superhote",
+      ).map((entry) => entry.sessionId),
+    ).toEqual(["older-session", "newer-session"]);
   });
 });
