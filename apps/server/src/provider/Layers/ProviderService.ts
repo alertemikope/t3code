@@ -192,6 +192,29 @@ function importedNativeSessionTimestamp(
   return typeof rawTimestamp === "string" ? rawTimestamp : "";
 }
 
+function resumeCursorSessionId(resumeCursor: unknown | null | undefined): string | undefined {
+  if (!resumeCursor || typeof resumeCursor !== "object" || Array.isArray(resumeCursor)) {
+    return undefined;
+  }
+  const rawSessionId = "sessionId" in resumeCursor ? resumeCursor.sessionId : undefined;
+  if (typeof rawSessionId !== "string") {
+    return undefined;
+  }
+  const trimmed = rawSessionId.trim();
+  return trimmed.length > 0 ? trimmed : undefined;
+}
+
+function oceanNativeSessionId(
+  binding: ProviderSessionDirectory.ProviderRuntimeBinding,
+): string | undefined {
+  if (binding.provider !== "ocean") {
+    return undefined;
+  }
+  return (
+    importedNativeSessionId(binding.runtimePayload) ?? resumeCursorSessionId(binding.resumeCursor)
+  );
+}
+
 const dieOnMissingBindingInstanceId = (
   operation: string,
   payload: {
@@ -1179,19 +1202,20 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     const bindings = yield* directory.listBindings();
     const restoredNativeSessionIds = new Set<string>();
     const importedOceanBindings = bindings
-      .filter(
-        (binding) =>
-          binding.provider === "ocean" &&
-          importedNativeSessionId(binding.runtimePayload) !== undefined,
-      )
-      .toSorted((left, right) =>
-        importedNativeSessionTimestamp(left.runtimePayload).localeCompare(
+      .filter((binding) => oceanNativeSessionId(binding) !== undefined)
+      .toSorted((left, right) => {
+        const leftIsImported = importedNativeSessionId(left.runtimePayload) !== undefined;
+        const rightIsImported = importedNativeSessionId(right.runtimePayload) !== undefined;
+        if (leftIsImported !== rightIsImported) {
+          return leftIsImported ? 1 : -1;
+        }
+        return importedNativeSessionTimestamp(left.runtimePayload).localeCompare(
           importedNativeSessionTimestamp(right.runtimePayload),
-        ),
-      );
+        );
+      });
 
     for (const binding of importedOceanBindings) {
-      const nativeSessionId = importedNativeSessionId(binding.runtimePayload);
+      const nativeSessionId = oceanNativeSessionId(binding);
       if (!nativeSessionId || restoredNativeSessionIds.has(nativeSessionId)) {
         continue;
       }
@@ -1201,13 +1225,13 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         operation: "ProviderService.restoreImportedOceanSessions",
       }).pipe(
         Effect.tap(() =>
-          Effect.logInfo("provider.imported_ocean_session.restored", {
+          Effect.logInfo("provider.ocean_session.restored", {
             threadId: binding.threadId,
             nativeSessionId,
           }),
         ),
         Effect.catchCause((cause) =>
-          Effect.logWarning("provider.imported_ocean_session.restore_failed", {
+          Effect.logWarning("provider.ocean_session.restore_failed", {
             threadId: binding.threadId,
             nativeSessionId,
             cause,
@@ -1217,7 +1241,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     }
   }).pipe(
     Effect.catchCause((cause) =>
-      Effect.logWarning("provider.imported_ocean_sessions.restore_failed", {
+      Effect.logWarning("provider.ocean_sessions.restore_failed", {
         cause,
       }),
     ),

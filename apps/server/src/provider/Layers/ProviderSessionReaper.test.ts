@@ -420,8 +420,8 @@ describe("ProviderSessionReaper", () => {
     expect(Option.isSome(remaining)).toBe(true);
   });
 
-  it("keeps imported Ocean sessions connected for cross-surface synchronization", async () => {
-    const threadId = ThreadId.make("thread-reaper-imported-ocean");
+  it("keeps direct Ocean sessions connected for cross-surface synchronization", async () => {
+    const threadId = ThreadId.make("thread-reaper-direct-ocean");
     const now = "2026-01-01T00:00:00.000Z";
     const harness = await createHarness({
       readModel: makeReadModel([
@@ -457,8 +457,7 @@ describe("ProviderSessionReaper", () => {
           sessionId: "ocean-native-session",
         },
         runtimePayload: {
-          importedNativeSessionId: "ocean-native-session",
-          importedAt: "2026-04-14T00:00:00.000Z",
+          cwd: "/tmp/ocean-direct",
         },
       }),
     );

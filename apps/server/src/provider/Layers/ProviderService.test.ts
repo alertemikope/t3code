@@ -730,7 +730,7 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("ProviderServiceLive restores one listener per imported Ocean session on startup", () =>
+it.effect("ProviderServiceLive restores one listener per Ocean session on startup", () =>
   Effect.gen(function* () {
     const tempDir = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-provider-ocean-restore-"),
@@ -748,9 +748,10 @@ it.effect("ProviderServiceLive restores one listener per imported Ocean session 
 
     yield* Effect.gen(function* () {
       const directory = yield* ProviderSessionDirectory.ProviderSessionDirectory;
-      for (const [threadId, importedAt] of [
-        ["thread-ocean-original", "2026-01-01T00:00:00.000Z"],
-        ["thread-ocean-duplicate", "2026-01-02T00:00:00.000Z"],
+      for (const [threadId, nativeSessionId, importedAt] of [
+        ["thread-ocean-original", "ocean-native-imported", "2026-01-01T00:00:00.000Z"],
+        ["thread-ocean-duplicate", "ocean-native-imported", "2026-01-02T00:00:00.000Z"],
+        ["thread-ocean-imported-shadow", "ocean-native-direct", "2026-01-03T00:00:00.000Z"],
       ] as const) {
         yield* directory.upsert({
           provider: OCEAN_DRIVER,
@@ -759,16 +760,30 @@ it.effect("ProviderServiceLive restores one listener per imported Ocean session 
           status: "stopped",
           resumeCursor: {
             schemaVersion: 1,
-            sessionId: "ocean-native-shared",
+            sessionId: nativeSessionId,
           },
           runtimeMode: "full-access",
           runtimePayload: {
             cwd: "/tmp/ocean-imported",
-            importedNativeSessionId: "ocean-native-shared",
+            importedNativeSessionId: nativeSessionId,
             importedAt,
           },
         });
       }
+      yield* directory.upsert({
+        provider: OCEAN_DRIVER,
+        providerInstanceId: oceanInstanceId,
+        threadId: asThreadId("thread-ocean-direct"),
+        status: "stopped",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: "ocean-native-direct",
+        },
+        runtimeMode: "full-access",
+        runtimePayload: {
+          cwd: "/tmp/ocean-direct",
+        },
+      });
     }).pipe(Effect.provide(directoryLayer));
 
     const providerLayer = makeProviderServiceLive().pipe(
@@ -787,19 +802,35 @@ it.effect("ProviderServiceLive restores one listener per imported Ocean session 
     yield* Effect.gen(function* () {
       const provider = yield* ProviderService.ProviderService;
       yield* provider.restoreImportedSessions?.() ?? Effect.void;
-      assert.equal(ocean.startSession.mock.calls.length, 1);
-      assert.deepEqual(ocean.startSession.mock.calls[0]?.[0], {
+      assert.equal(ocean.startSession.mock.calls.length, 2);
+      const callsByThreadId = new Map(
+        ocean.startSession.mock.calls.map(([input]) => [input.threadId, input]),
+      );
+      assert.deepEqual(callsByThreadId.get(asThreadId("thread-ocean-original")), {
         threadId: asThreadId("thread-ocean-original"),
         provider: OCEAN_DRIVER,
         providerInstanceId: oceanInstanceId,
         cwd: "/tmp/ocean-imported",
         resumeCursor: {
           schemaVersion: 1,
-          sessionId: "ocean-native-shared",
+          sessionId: "ocean-native-imported",
         },
         importHistory: true,
         runtimeMode: "full-access",
       });
+      assert.deepEqual(callsByThreadId.get(asThreadId("thread-ocean-direct")), {
+        threadId: asThreadId("thread-ocean-direct"),
+        provider: OCEAN_DRIVER,
+        providerInstanceId: oceanInstanceId,
+        cwd: "/tmp/ocean-direct",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: "ocean-native-direct",
+        },
+        runtimeMode: "full-access",
+      });
+      assert.equal(callsByThreadId.has(asThreadId("thread-ocean-duplicate")), false);
+      assert.equal(callsByThreadId.has(asThreadId("thread-ocean-imported-shadow")), false);
     }).pipe(Effect.provide(providerLayer), Effect.scoped);
 
     NodeFS.rmSync(tempDir, { recursive: true, force: true });

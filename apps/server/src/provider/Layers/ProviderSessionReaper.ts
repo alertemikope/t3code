@@ -16,20 +16,28 @@ import { ProviderService } from "../Services/ProviderService.ts";
 const DEFAULT_INACTIVITY_THRESHOLD_MS = 30 * 60 * 1000;
 const DEFAULT_SWEEP_INTERVAL_MS = 5 * 60 * 1000;
 
-function isImportedOceanSession(binding: {
+function isSynchronizedOceanSession(binding: {
   readonly provider: string;
+  readonly resumeCursor?: unknown | null;
   readonly runtimePayload?: unknown | null;
 }): boolean {
   if (binding.provider !== "ocean") {
     return false;
   }
   const payload = binding.runtimePayload;
-  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+  if (payload && typeof payload === "object" && !Array.isArray(payload)) {
+    const importedSessionId =
+      "importedNativeSessionId" in payload ? payload.importedNativeSessionId : undefined;
+    if (typeof importedSessionId === "string" && importedSessionId.trim().length > 0) {
+      return true;
+    }
+  }
+  const cursor = binding.resumeCursor;
+  if (!cursor || typeof cursor !== "object" || Array.isArray(cursor)) {
     return false;
   }
-  const sessionId =
-    "importedNativeSessionId" in payload ? payload.importedNativeSessionId : undefined;
-  return typeof sessionId === "string" && sessionId.trim().length > 0;
+  const resumedSessionId = "sessionId" in cursor ? cursor.sessionId : undefined;
+  return typeof resumedSessionId === "string" && resumedSessionId.trim().length > 0;
 }
 
 export interface ProviderSessionReaperLiveOptions {
@@ -58,8 +66,8 @@ const makeProviderSessionReaper = (options?: ProviderSessionReaperLiveOptions) =
         if (binding.status === "stopped") {
           continue;
         }
-        if (isImportedOceanSession(binding)) {
-          yield* Effect.logDebug("provider.session.reaper.skipped_imported_ocean", {
+        if (isSynchronizedOceanSession(binding)) {
+          yield* Effect.logDebug("provider.session.reaper.skipped_synchronized_ocean", {
             threadId: binding.threadId,
           });
           continue;
