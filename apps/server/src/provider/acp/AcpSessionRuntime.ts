@@ -28,6 +28,7 @@ import {
   mergeToolCallState,
   parseSessionModeState,
   parseSessionUpdateEvent,
+  sessionUpdateIsExternalSync,
   sessionUpdateIsReplay,
   waitForSessionLoadReplayIdle,
   type SessionLoadGate,
@@ -954,11 +955,24 @@ const handleSessionUpdate = ({
             continue;
           }
         }
+        if (event.itemId) {
+          const assistantSegmentState = yield* Ref.get(assistantSegmentRef);
+          if (
+            assistantSegmentState.activeItemId &&
+            assistantSegmentState.activeItemId !== event.itemId
+          ) {
+            yield* closeActiveAssistantSegment({
+              queue,
+              assistantSegmentRef,
+            });
+          }
+        }
         const itemId = yield* ensureActiveAssistantSegment({
           queue,
           assistantSegmentRef,
           sessionId: params.sessionId,
           assistantItemRuntimeId,
+          ...(event.itemId ? { preferredItemId: event.itemId } : {}),
         });
         yield* Queue.offer(queue, {
           ...event,
@@ -967,6 +981,12 @@ const handleSessionUpdate = ({
         continue;
       }
       yield* Queue.offer(queue, event);
+    }
+    if (sessionUpdateIsExternalSync(params)) {
+      yield* closeActiveAssistantSegment({
+        queue,
+        assistantSegmentRef,
+      });
     }
   });
 
@@ -1004,11 +1024,13 @@ const ensureActiveAssistantSegment = ({
   assistantSegmentRef,
   sessionId,
   assistantItemRuntimeId,
+  preferredItemId,
 }: {
   readonly queue: Queue.Queue<AcpSessionRuntimeEvent>;
   readonly assistantSegmentRef: Ref.Ref<AcpAssistantSegmentState>;
   readonly sessionId: string;
   readonly assistantItemRuntimeId: string;
+  readonly preferredItemId?: string;
 }) =>
   Ref.modify<AcpAssistantSegmentState, EnsureActiveAssistantSegmentResult>(
     assistantSegmentRef,
@@ -1016,7 +1038,9 @@ const ensureActiveAssistantSegment = ({
       if (current.activeItemId) {
         return [{ itemId: current.activeItemId }, current] as const;
       }
-      const itemId = assistantItemId(sessionId, assistantItemRuntimeId, current.nextSegmentIndex);
+      const itemId =
+        preferredItemId ??
+        assistantItemId(sessionId, assistantItemRuntimeId, current.nextSegmentIndex);
       return [
         {
           itemId,

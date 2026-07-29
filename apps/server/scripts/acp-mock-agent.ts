@@ -28,6 +28,7 @@ const omitXAiPromptCompleteStopReason =
   process.env.T3_ACP_OMIT_XAI_PROMPT_COMPLETE_STOP_REASON === "1";
 const failLoadSession = process.env.T3_ACP_FAIL_LOAD_SESSION === "1";
 const emitLoadReplay = process.env.T3_ACP_EMIT_LOAD_REPLAY === "1";
+const emitExternalSyncAfterLoad = process.env.T3_ACP_EMIT_EXTERNAL_SYNC_AFTER_LOAD === "1";
 const hangLoadSessionAfterReplay = process.env.T3_ACP_HANG_LOAD_SESSION_AFTER_REPLAY === "1";
 const delayLoadSessionAfterReplay = process.env.T3_ACP_DELAY_LOAD_SESSION_AFTER_REPLAY === "1";
 const loadSessionDelayMs = Number(process.env.T3_ACP_LOAD_SESSION_DELAY_MS ?? "5000");
@@ -340,6 +341,38 @@ const program = Effect.gen(function* () {
     });
   };
 
+  const scheduleExternalSyncNotifications = (requestedSessionId: string) => {
+    if (!emitExternalSyncAfterLoad) {
+      return Effect.void;
+    }
+    return Effect.sleep("25 millis").pipe(
+      Effect.andThen(
+        Effect.sync(() => {
+          writeJsonRpcNotification("session/update", {
+            _meta: { "ocean.externalSync": true },
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "user_message_chunk",
+              messageId: "a88f5477-5d72-508d-97d0-e6eddb78e021",
+              content: { type: "text", text: "external user text" },
+            },
+          });
+          writeJsonRpcNotification("session/update", {
+            _meta: { "ocean.externalSync": true },
+            sessionId: requestedSessionId,
+            update: {
+              sessionUpdate: "agent_message_chunk",
+              messageId: "4637c6a4-c417-5247-b170-3ce4b491cb28",
+              content: { type: "text", text: "external assistant text" },
+            },
+          });
+        }),
+      ),
+      Effect.forkDetach,
+      Effect.asVoid,
+    );
+  };
+
   yield* agent.handleLoadSession((request) =>
     Effect.gen(function* () {
       const requestedSessionId = String(request.sessionId ?? sessionId);
@@ -372,6 +405,7 @@ const program = Effect.gen(function* () {
           content: { type: "text", text: "replay" },
         },
       });
+      yield* scheduleExternalSyncNotifications(requestedSessionId);
       return {
         modes: modeState(),
         models: modelState(),

@@ -610,6 +610,58 @@ describe("AcpSessionRuntime", () => {
     ),
   );
 
+  it.effect("forwards Ocean updates written by another surface as completed stable items", () =>
+    Effect.gen(function* () {
+      const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;
+      yield* runtime.start();
+
+      const notes = Array.from(yield* Stream.runCollect(Stream.take(runtime.getEvents(), 4)));
+      expect(notes.map((note) => note._tag)).toEqual([
+        "UserContentDelta",
+        "AssistantItemStarted",
+        "ContentDelta",
+        "AssistantItemCompleted",
+      ]);
+      expect(notes[0]).toMatchObject({
+        _tag: "UserContentDelta",
+        itemId: "a88f5477-5d72-508d-97d0-e6eddb78e021",
+        text: "external user text",
+      });
+      expect(notes[1]).toMatchObject({
+        _tag: "AssistantItemStarted",
+        itemId: "4637c6a4-c417-5247-b170-3ce4b491cb28",
+      });
+      expect(notes[2]).toMatchObject({
+        _tag: "ContentDelta",
+        itemId: "4637c6a4-c417-5247-b170-3ce4b491cb28",
+        text: "external assistant text",
+      });
+      expect(notes[3]).toMatchObject({
+        _tag: "AssistantItemCompleted",
+        itemId: "4637c6a4-c417-5247-b170-3ce4b491cb28",
+      });
+    }).pipe(
+      Effect.provide(
+        AcpSessionRuntime.layer({
+          authMethodId: "test",
+          spawn: {
+            command: mockAgentCommand,
+            args: mockAgentArgs,
+            env: {
+              T3_ACP_EMIT_EXTERNAL_SYNC_AFTER_LOAD: "1",
+            },
+          },
+          cwd: process.cwd(),
+          resumeSessionId: "mock-session-1",
+          clientInfo: { name: "t3-test", version: "0.0.0" },
+        }),
+      ),
+      Effect.scoped,
+      Effect.provide(NodeServices.layer),
+      TestClock.withLive,
+    ),
+  );
+
   it.effect("completes session/load after replay becomes idle while its RPC stays pending", () =>
     Effect.gen(function* () {
       const runtime = yield* AcpSessionRuntime.AcpSessionRuntime;

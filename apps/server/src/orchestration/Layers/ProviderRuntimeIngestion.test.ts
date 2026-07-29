@@ -923,6 +923,50 @@ describe("ProviderRuntimeIngestion", () => {
     expect(thread.session?.activeTurnId ?? null).toBeNull();
   });
 
+  it("upserts replayed ACP assistant snapshots without duplicating text", async () => {
+    const harness = await createHarness();
+    const now = "2026-01-01T00:00:00.000Z";
+    const makeSnapshot = (eventId: string) => ({
+      type: "content.delta" as const,
+      eventId: asEventId(eventId),
+      provider: ProviderDriverKind.make("ocean"),
+      createdAt: now,
+      threadId: asThreadId("thread-1"),
+      itemId: asItemId("ocean:session-1:transcript:1:assistant"),
+      payload: {
+        streamKind: "assistant_text" as const,
+        delta: "historical answer",
+      },
+      raw: {
+        source: "acp.jsonrpc" as const,
+        method: "session/update",
+        payload: {
+          _meta: { isReplay: true },
+        },
+      },
+    });
+
+    harness.emit(makeSnapshot("evt-assistant-history-1"));
+    await waitForThread(harness.readModel, (entry) =>
+      entry.messages.some(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "assistant:ocean:session-1:transcript:1:assistant" &&
+          message.text === "historical answer",
+      ),
+    );
+
+    harness.emit(makeSnapshot("evt-assistant-history-2"));
+    await harness.drain();
+    const readModel = await harness.readModel();
+    const thread = readModel.threads.find((entry) => entry.id === asThreadId("thread-1"));
+    expect(
+      thread?.messages.filter(
+        (message: ProviderRuntimeTestMessage) =>
+          message.id === "assistant:ocean:session-1:transcript:1:assistant",
+      ),
+    ).toHaveLength(1);
+  });
+
   it("maps canonical content delta/item completed into finalized assistant messages", async () => {
     const harness = await createHarness();
     const now = "2026-01-01T00:00:00.000Z";

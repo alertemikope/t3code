@@ -911,6 +911,21 @@ routing.layer("ProviderServiceLive routing", (it) => {
       });
       assert.deepEqual(startInput?.modelSelection, modelSelection);
       yield* provider.stopSession({ threadId });
+
+      routing.ocean.startSession.mockClear();
+      yield* provider.sendTurn({
+        threadId,
+        input: "continue after an external Ocean turn",
+        attachments: [],
+      });
+      assert.equal(routing.ocean.startSession.mock.calls.length, 1);
+      const recoveredInput = routing.ocean.startSession.mock.calls[0]?.[0];
+      assert.equal(recoveredInput?.importHistory, true);
+      assert.deepEqual(recoveredInput?.resumeCursor, {
+        schemaVersion: 1,
+        sessionId: "ocean-native-session",
+      });
+      yield* provider.stopSession({ threadId });
     }),
   );
 

@@ -8,6 +8,7 @@ import {
   parsePermissionRequest,
   parseSessionModeState,
   parseSessionUpdateEvent,
+  sessionUpdateIsExternalSync,
   sessionUpdateIsReplay,
   syntheticLoadSessionResponseFromInitialize,
 } from "./AcpRuntimeModel.ts";
@@ -78,6 +79,28 @@ describe("AcpRuntimeModel", () => {
         update: {
           sessionUpdate: "agent_message_chunk",
           content: { type: "text", text: "live" },
+        },
+      } satisfies EffectAcpSchema.SessionNotification),
+    ).toBe(false);
+  });
+
+  it("detects Ocean transcript updates emitted by another surface", () => {
+    expect(
+      sessionUpdateIsExternalSync({
+        _meta: { "ocean.externalSync": true },
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "external answer" },
+        },
+      } satisfies EffectAcpSchema.SessionNotification),
+    ).toBe(true);
+    expect(
+      sessionUpdateIsExternalSync({
+        sessionId: "session-1",
+        update: {
+          sessionUpdate: "agent_message_chunk",
+          content: { type: "text", text: "ordinary live answer" },
         },
       } satisfies EffectAcpSchema.SessionNotification),
     ).toBe(false);

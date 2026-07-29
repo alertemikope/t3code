@@ -165,6 +165,19 @@ function readPersistedCwd(
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
+function isImportedNativeSession(
+  runtimePayload: ProviderSessionDirectory.ProviderRuntimeBinding["runtimePayload"],
+): boolean {
+  if (!runtimePayload || typeof runtimePayload !== "object" || Array.isArray(runtimePayload)) {
+    return false;
+  }
+  const importedNativeSessionId =
+    "importedNativeSessionId" in runtimePayload
+      ? runtimePayload.importedNativeSessionId
+      : undefined;
+  return typeof importedNativeSessionId === "string" && importedNativeSessionId.trim().length > 0;
+}
+
 const dieOnMissingBindingInstanceId = (
   operation: string,
   payload: {
@@ -399,6 +412,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
+      const shouldRefreshImportedOceanHistory =
+        input.binding.provider === "ocean" && isImportedNativeSession(input.binding.runtimePayload);
 
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
       const resumed = yield* adapter
@@ -409,6 +424,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
+          ...(shouldRefreshImportedOceanHistory ? { importHistory: true } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));

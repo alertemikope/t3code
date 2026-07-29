@@ -124,6 +124,25 @@ function sameId(left: string | null | undefined, right: string | null | undefine
   return left === right;
 }
 
+function isAcpHistorySnapshot(event: ProviderRuntimeEvent): boolean {
+  const raw = event.raw;
+  if (!raw || raw.source !== "acp.jsonrpc") {
+    return false;
+  }
+  const payload = raw.payload;
+  if (!payload || typeof payload !== "object" || Array.isArray(payload)) {
+    return false;
+  }
+  const meta = "_meta" in payload ? payload._meta : undefined;
+  if (!meta || typeof meta !== "object" || Array.isArray(meta)) {
+    return false;
+  }
+  return (
+    ("isReplay" in meta && meta.isReplay === true) ||
+    ("ocean.externalSync" in meta && meta["ocean.externalSync"] === true)
+  );
+}
+
 function hasAssistantMessageForTurn(
   messages: ReadonlyArray<OrchestrationMessage>,
   turnId: TurnId,
@@ -1486,33 +1505,49 @@ const make = Effect.gen(function* () {
           yield* rememberAssistantMessageId(thread.id, turnId, assistantMessageId);
         }
 
-        const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
-          serverSettingsService.getSettings,
-          (settings) => (settings.enableAssistantStreaming ? "streaming" : "buffered"),
-        );
-        if (assistantDeliveryMode === "buffered") {
-          const spillChunk = yield* appendBufferedAssistantText(assistantMessageId, assistantDelta);
-          if (spillChunk.length > 0) {
+        if (isAcpHistorySnapshot(event)) {
+          yield* clearBufferedAssistantText(assistantMessageId);
+          yield* orchestrationEngine.dispatch({
+            type: "thread.message.assistant.snapshot",
+            commandId: yield* providerCommandId(event, "assistant-history-snapshot"),
+            threadId: thread.id,
+            messageId: assistantMessageId,
+            text: assistantDelta,
+            ...(turnId ? { turnId } : {}),
+            createdAt: now,
+          });
+        } else {
+          const assistantDeliveryMode: AssistantDeliveryMode = yield* Effect.map(
+            serverSettingsService.getSettings,
+            (settings) => (settings.enableAssistantStreaming ? "streaming" : "buffered"),
+          );
+          if (assistantDeliveryMode === "buffered") {
+            const spillChunk = yield* appendBufferedAssistantText(
+              assistantMessageId,
+              assistantDelta,
+            );
+            if (spillChunk.length > 0) {
+              yield* orchestrationEngine.dispatch({
+                type: "thread.message.assistant.delta",
+                commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
+                threadId: thread.id,
+                messageId: assistantMessageId,
+                delta: spillChunk,
+                ...(turnId ? { turnId } : {}),
+                createdAt: now,
+              });
+            }
+          } else {
             yield* orchestrationEngine.dispatch({
               type: "thread.message.assistant.delta",
-              commandId: yield* providerCommandId(event, "assistant-delta-buffer-spill"),
+              commandId: yield* providerCommandId(event, "assistant-delta"),
               threadId: thread.id,
               messageId: assistantMessageId,
-              delta: spillChunk,
+              delta: assistantDelta,
               ...(turnId ? { turnId } : {}),
               createdAt: now,
             });
           }
-        } else {
-          yield* orchestrationEngine.dispatch({
-            type: "thread.message.assistant.delta",
-            commandId: yield* providerCommandId(event, "assistant-delta"),
-            threadId: thread.id,
-            messageId: assistantMessageId,
-            delta: assistantDelta,
-            ...(turnId ? { turnId } : {}),
-            createdAt: now,
-          });
         }
       }
 

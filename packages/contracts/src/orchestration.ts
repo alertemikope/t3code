@@ -812,6 +812,16 @@ const ThreadMessageAssistantDeltaCommand = Schema.Struct({
   createdAt: IsoDateTime,
 });
 
+const ThreadMessageAssistantSnapshotCommand = Schema.Struct({
+  type: Schema.Literal("thread.message.assistant.snapshot"),
+  commandId: CommandId,
+  threadId: ThreadId,
+  messageId: MessageId,
+  text: Schema.String,
+  turnId: Schema.optional(TurnId),
+  createdAt: IsoDateTime,
+});
+
 const ThreadMessageUserAppendCommand = Schema.Struct({
   type: Schema.Literal("thread.message.user.append"),
   commandId: CommandId,
@@ -872,6 +882,7 @@ const InternalOrchestrationCommand = Schema.Union([
   ThreadSessionSetCommand,
   ThreadMessageUserAppendCommand,
   ThreadMessageAssistantDeltaCommand,
+  ThreadMessageAssistantSnapshotCommand,
   ThreadMessageAssistantCompleteCommand,
   ThreadProposedPlanUpsertCommand,
   ThreadTurnDiffCompleteCommand,

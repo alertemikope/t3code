@@ -464,6 +464,11 @@ export function sessionUpdateIsReplay(params: EffectAcpSchema.SessionNotificatio
   return isRecord(meta) && meta.isReplay === true;
 }
 
+export function sessionUpdateIsExternalSync(params: EffectAcpSchema.SessionNotification): boolean {
+  const meta = params._meta;
+  return isRecord(meta) && meta["ocean.externalSync"] === true;
+}
+
 export interface SessionLoadGate {
   readonly active: boolean;
   readonly lastActivityAtMillis: number | undefined;
