@@ -33,6 +33,7 @@ import {
   DialogTitle,
 } from "../ui/dialog";
 import { Select, SelectItem, SelectPopup, SelectTrigger, SelectValue } from "../ui/select";
+import { APP_BASE_NAME } from "~/branding";
 import { stackedThreadToast, toastManager } from "../ui/toast";
 import {
   importableNativeSessionProviders,
@@ -217,7 +218,7 @@ export function ImportProviderSessionsDialog({
       stackedThreadToast({
         type: "success",
         title: "Provider session imported",
-        description: `${title} is ready in T3 Code with ${model} · ${thinking}.`,
+        description: `${title} is ready in ${APP_BASE_NAME} with ${model} · ${thinking}.`,
       }),
     );
     onOpenChange(false);
@@ -247,8 +248,8 @@ export function ImportProviderSessionsDialog({
         <DialogHeader>
           <DialogTitle>Import an Ocean or Pi session</DialogTitle>
           <DialogDescription>
-            Resume a native conversation in T3 Code. Model and thinking are stored on the imported
-            thread and applied before its next turn.
+            Resume a native conversation in {APP_BASE_NAME}. Model and thinking are stored on the
+            imported thread and applied before its next turn.
           </DialogDescription>
         </DialogHeader>
 

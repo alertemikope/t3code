@@ -1,5 +1,6 @@
 import type { RelayClientDeviceRecord } from "@t3tools/contracts/relay";
 import { RefreshCwIcon, SmartphoneIcon } from "lucide-react";
+import { APP_BASE_NAME } from "~/branding";
 
 import { useManagedRelayDevices } from "../../cloud/managedRelayState";
 import { cn } from "../../lib/utils";
@@ -96,7 +97,7 @@ function EmptyMobileClients() {
       <EmptyHeader>
         <EmptyTitle>No mobile clients</EmptyTitle>
         <EmptyDescription>
-          Sign in to T3 Code on your iPhone to register it for push notifications and Live
+          Sign in to {APP_BASE_NAME} on your iPhone to register it for push notifications and Live
           Activities.
         </EmptyDescription>
       </EmptyHeader>

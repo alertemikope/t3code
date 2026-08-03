@@ -27,6 +27,7 @@ import {
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
 import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
+import { APP_BASE_NAME } from "~/branding";
 import {
   isAtomCommandInterrupted,
   settlePromise,
@@ -1033,7 +1034,7 @@ export function AppearanceSettingsPanel() {
       <SettingsSection id="appearance" title="Appearance">
         <SettingsRow
           {...searchableSetting("theme")}
-          description="Choose how T3 Code looks across the app."
+          description={`Choose how ${APP_BASE_NAME} looks across the app.`}
           resetAction={
             theme !== "system" ? (
               <SettingResetButton label="theme" onClick={() => setTheme("system")} />

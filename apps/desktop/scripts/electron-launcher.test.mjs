@@ -1,12 +1,17 @@
 import { assert, describe, it } from "vite-plus/test";
 
 import {
+  APP_DISPLAY_NAME,
   makeDevelopmentLauncherScript,
   resolveElectronBinaryPath,
   resolveMacLauncherPaths,
 } from "./electron-launcher.mjs";
 
 describe("electron development launcher", () => {
+  it("uses the MiCode desktop identity", () => {
+    assert.match(APP_DISPLAY_NAME, /^MiCode \((?:Dev|Alpha)\)$/);
+  });
+
   it("uses captured values only as fallbacks for a live runner environment", () => {
     const script = makeDevelopmentLauncherScript({
       electronBinaryPath: "/repo/node_modules/electron/Electron",

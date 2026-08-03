@@ -1,7 +1,7 @@
 import type { EnvironmentId, ServerConfig, ServerSelfUpdateCapability } from "@t3tools/contracts";
 import * as Schema from "effect/Schema";
 
-import { APP_VERSION } from "./branding";
+import { APP_BASE_NAME, APP_VERSION } from "./branding";
 import { getLocalStorageItem, setLocalStorageItem } from "./hooks/useLocalStorage";
 
 export interface VersionMismatch {
@@ -39,7 +39,7 @@ export function resolveVersionMismatch(
   return {
     clientVersion: normalizedClientVersion,
     serverVersion: normalizedServerVersion,
-    hint: "Version mismatch. Try syncing the client and server to the same T3 Code version.",
+    hint: `Version mismatch. Try syncing the client and server to the same ${APP_BASE_NAME} version.`,
   };
 }
 
@@ -73,7 +73,7 @@ export function serverUpdateGuidance(
     case "respawn":
       return `Update the ${serverLabel} so they stay in sync.`;
     case "desktop-managed":
-      return `The ${serverLabel} is run by the T3 Code desktop app on its machine — update the desktop app there to sync them.`;
+      return `The ${serverLabel} is run by the ${APP_BASE_NAME} desktop app on its machine — update the desktop app there to sync them.`;
     default:
       return `Relaunch the ${serverLabel} with the copied command to sync them.`;
   }
