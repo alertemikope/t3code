@@ -69,6 +69,12 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.backendCwd, "/repo");
       assert.equal(environment.appUserModelId, "com.t3tools.t3code.dev");
       assert.equal(environment.linuxWmClass, "t3code-dev");
+      assert.deepEqual(environment.branding, {
+        baseName: "MiCode",
+        stageLabel: "Dev",
+        displayName: "MiCode (Dev)",
+      });
+      assert.equal(environment.displayName, "MiCode (Dev)");
       assert.deepEqual(
         Option.map(environment.devServerUrl, (url) => url.href),
         Option.some("http://localhost:5173/"),
@@ -95,6 +101,11 @@ describe("DesktopEnvironment", () => {
       assert.equal(environment.logDir, "/tmp/t3/userdata/logs");
       assert.equal(environment.browserArtifactsDir, "/tmp/t3/userdata/browser-artifacts");
       assert.equal(environment.serverSettingsPath, "/tmp/t3/userdata/settings.json");
+      assert.deepEqual(environment.branding, {
+        baseName: "MiCode",
+        stageLabel: "Alpha",
+        displayName: "MiCode (Alpha)",
+      });
     }),
   );
 
