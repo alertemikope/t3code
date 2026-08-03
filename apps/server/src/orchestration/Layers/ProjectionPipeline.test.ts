@@ -2774,4 +2774,46 @@ engineLayer("OrchestrationProjectionPipeline via engine dispatch", (it) => {
       ]);
     }),
   );
+
+  it.effect("persists reversible project archive state through engine dispatch", () =>
+    Effect.gen(function* () {
+      const engine = yield* OrchestrationEngineService;
+      const sql = yield* SqlClient.SqlClient;
+      const projectId = ProjectId.make("project-archive-persistence");
+
+      yield* engine.dispatch({
+        type: "project.create",
+        commandId: CommandId.make("cmd-project-archive-create"),
+        projectId,
+        title: "Archived project",
+        workspaceRoot: "/tmp/project-archive-persistence",
+        createdAt: "2026-01-01T00:00:00.000Z",
+      });
+      yield* engine.dispatch({
+        type: "project.archive",
+        commandId: CommandId.make("cmd-project-archive"),
+        projectId,
+      });
+
+      const archivedRows = yield* sql<{ readonly archivedAt: string | null }>`
+        SELECT archived_at AS "archivedAt"
+        FROM projection_projects
+        WHERE project_id = ${projectId}
+      `;
+      assert.ok(archivedRows[0]?.archivedAt !== null);
+
+      yield* engine.dispatch({
+        type: "project.unarchive",
+        commandId: CommandId.make("cmd-project-unarchive"),
+        projectId,
+      });
+
+      const restoredRows = yield* sql<{ readonly archivedAt: string | null }>`
+        SELECT archived_at AS "archivedAt"
+        FROM projection_projects
+        WHERE project_id = ${projectId}
+      `;
+      assert.deepStrictEqual(restoredRows, [{ archivedAt: null }]);
+    }),
+  );
 });

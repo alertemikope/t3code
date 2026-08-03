@@ -11,6 +11,8 @@ import {
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetTurnDiffInput,
   OrchestrationLatestTurn,
+  OrchestrationProject,
+  OrchestrationProjectShell,
   ProjectCreatedPayload,
   ProjectMetaUpdatedPayload,
   OrchestrationProposedPlan,
@@ -41,6 +43,8 @@ const decodeOrchestrationProposedPlan = Schema.decodeUnknownEffect(Orchestration
 const decodeOrchestrationSession = Schema.decodeUnknownEffect(OrchestrationSession);
 const decodeOrchestrationThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const decodeOrchestrationThreadShell = Schema.decodeUnknownEffect(OrchestrationThreadShell);
+const decodeOrchestrationProject = Schema.decodeUnknownEffect(OrchestrationProject);
+const decodeOrchestrationProjectShell = Schema.decodeUnknownEffect(OrchestrationProjectShell);
 const encodeThreadCreatedPayload = Schema.encodeEffect(ThreadCreatedPayload);
 
 function getOptionValue(
@@ -466,6 +470,64 @@ it.effect("decodes thread archived and unarchived events", () =>
     }
     assert.strictEqual(archived.payload.archivedAt, "2026-01-01T00:00:00.000Z");
     assert.strictEqual(unarchived.type, "thread.unarchived");
+  }),
+);
+
+it.effect("decodes project archive commands and events", () =>
+  Effect.gen(function* () {
+    const archiveCommand = yield* decodeOrchestrationCommand({
+      type: "project.archive",
+      commandId: "cmd-project-archive-1",
+      projectId: "project-1",
+    });
+    const unarchiveCommand = yield* decodeOrchestrationCommand({
+      type: "project.unarchive",
+      commandId: "cmd-project-unarchive-1",
+      projectId: "project-1",
+    });
+    const archived = yield* decodeOrchestrationEvent({
+      sequence: 1,
+      eventId: "event-project-archive-1",
+      aggregateKind: "project",
+      aggregateId: "project-1",
+      type: "project.archived",
+      occurredAt: "2026-01-01T00:00:00.000Z",
+      commandId: "cmd-project-archive-1",
+      causationEventId: null,
+      correlationId: "cmd-project-archive-1",
+      metadata: {},
+      payload: {
+        projectId: "project-1",
+        archivedAt: "2026-01-01T00:00:00.000Z",
+        updatedAt: "2026-01-01T00:00:00.000Z",
+      },
+    });
+
+    assert.strictEqual(archiveCommand.type, "project.archive");
+    assert.strictEqual(unarchiveCommand.type, "project.unarchive");
+    assert.strictEqual(archived.type, "project.archived");
+    if (archived.type === "project.archived") {
+      assert.strictEqual(archived.payload.archivedAt, "2026-01-01T00:00:00.000Z");
+    }
+  }),
+);
+
+it.effect("defaults archivedAt when decoding historical project data", () =>
+  Effect.gen(function* () {
+    const common = {
+      id: "project-1",
+      title: "Historical project",
+      workspaceRoot: "/tmp/historical-project",
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-01-01T00:00:00.000Z",
+      updatedAt: "2026-01-01T00:00:00.000Z",
+    };
+    const project = yield* decodeOrchestrationProject({ ...common, deletedAt: null });
+    const shell = yield* decodeOrchestrationProjectShell(common);
+
+    assert.strictEqual(project.archivedAt, null);
+    assert.strictEqual(shell.archivedAt, null);
   }),
 );
 

@@ -73,6 +73,7 @@ import {
 } from "./previewAutomation.ts";
 import type {
   ClientOrchestrationCommand,
+  OrchestrationArchivedProjectsSnapshot,
   OrchestrationGetFullThreadDiffInput,
   OrchestrationGetFullThreadDiffResult,
   OrchestrationGetTurnDiffInput,
@@ -1211,6 +1212,7 @@ export interface EnvironmentApi {
       input: OrchestrationGetFullThreadDiffInput,
     ) => Promise<OrchestrationGetFullThreadDiffResult>;
     getArchivedShellSnapshot: () => Promise<OrchestrationShellSnapshot>;
+    getArchivedProjectsSnapshot: () => Promise<OrchestrationArchivedProjectsSnapshot>;
     subscribeShell: (
       callback: (event: OrchestrationShellStreamItem) => void,
       options?: {

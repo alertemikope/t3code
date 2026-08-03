@@ -158,6 +158,7 @@ const makeDefaultOrchestrationReadModel = () => {
         scripts: [],
         createdAt: now,
         updatedAt: now,
+        archivedAt: null,
         deletedAt: null,
       },
     ],
@@ -742,9 +743,16 @@ const buildAppUnderTest = (options?: {
               threads: [],
               updatedAt: "1970-01-01T00:00:00.000Z",
             }),
+          getArchivedProjectsSnapshot: () =>
+            Effect.succeed({
+              snapshotSequence: 0,
+              projects: [],
+              updatedAt: "1970-01-01T00:00:00.000Z",
+            }),
           searchThreads: () => Effect.succeed({ matches: [] }),
           getSnapshotSequence: () => Effect.succeed({ snapshotSequence: 0 }),
           getProjectShellById: () => Effect.succeed(Option.none()),
+          getActiveProjectShellSnapshotById: () => Effect.succeed(Option.none()),
           getThreadShellById: () => Effect.succeed(Option.none()),
           getThreadDetailById: () => Effect.succeed(Option.none()),
           getThreadDetailSnapshot: () => Effect.succeed(Option.none()),
@@ -5737,6 +5745,7 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
             scripts: [],
             createdAt: now,
             updatedAt: now,
+            archivedAt: null,
             deletedAt: null,
           },
         ],
@@ -5770,6 +5779,23 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
         layers: {
           projectionSnapshotQuery: {
             getSnapshot: () => Effect.succeed(snapshot),
+            getArchivedProjectsSnapshot: () =>
+              Effect.succeed({
+                snapshotSequence: 2,
+                projects: [
+                  {
+                    id: ProjectId.make("project-hidden"),
+                    title: "Hidden project",
+                    workspaceRoot: "/tmp/project-hidden",
+                    defaultModelSelection: null,
+                    scripts: [],
+                    createdAt: now,
+                    updatedAt: now,
+                    archivedAt: now,
+                  },
+                ],
+                updatedAt: now,
+              }),
             searchThreads: () =>
               Effect.succeed({
                 matches: [
@@ -5856,6 +5882,16 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
           messageCreatedAt: now,
         },
       ]);
+
+      const archivedProjects = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.getArchivedProjectsSnapshot]({}),
+        ),
+      );
+      assert.deepEqual(
+        archivedProjects.projects.map((project) => project.id),
+        [ProjectId.make("project-hidden")],
+      );
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 
@@ -6656,8 +6692,63 @@ it.layer(NodeServices.layer)("server router seam", (it) => {
       );
 
       const [first] = Array.from(items);
-      assert.equal(first?.kind, "project-removed");
-      assert.equal(first?.kind === "project-removed" ? first.projectId : null, projectId);
+      assert.equal(first?.kind, "project-visibility-changed");
+      assert.equal(
+        first?.kind === "project-visibility-changed" ? first.projectId : null,
+        projectId,
+      );
+    }).pipe(Effect.provide(NodeHttpServer.layerTest)),
+  );
+
+  it.effect("subscribeShell removes a hidden project and its thread shells atomically", () =>
+    Effect.gen(function* () {
+      const projectId = ProjectId.make("project-hidden");
+      const now = "2026-01-01T00:00:00.000Z";
+      const event: OrchestrationEvent = {
+        sequence: 1,
+        eventId: EventId.make("event-project-hidden"),
+        aggregateKind: "project",
+        aggregateId: projectId,
+        occurredAt: now,
+        commandId: null,
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        type: "project.archived",
+        payload: { projectId, archivedAt: now, updatedAt: now },
+      };
+
+      yield* buildAppUnderTest({
+        layers: {
+          orchestrationEngine: {
+            latestSequence: Effect.succeed(1),
+            readEvents: () => Stream.make(event),
+          },
+          projectionSnapshotQuery: {
+            getActiveProjectShellSnapshotById: () => Effect.succeed(Option.none()),
+          },
+        },
+      });
+
+      const wsUrl = yield* getWsServerUrl("/ws");
+      const items = yield* Effect.scoped(
+        withWsRpcClient(wsUrl, (client) =>
+          client[ORCHESTRATION_WS_METHODS.subscribeShell]({ afterSequence: 0 }).pipe(
+            Stream.take(1),
+            Stream.runCollect,
+          ),
+        ),
+      );
+
+      assert.deepEqual(Array.from(items), [
+        {
+          kind: "project-visibility-changed",
+          sequence: 1,
+          projectId,
+          project: null,
+          threads: [],
+        },
+      ]);
     }).pipe(Effect.provide(NodeHttpServer.layerTest)),
   );
 

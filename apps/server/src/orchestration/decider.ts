@@ -14,7 +14,9 @@ import {
   listThreadsByProjectId,
   requireActiveProjectWorkspaceRootAbsent,
   requireProject,
+  requireProjectArchived,
   requireProjectAbsent,
+  requireProjectNotArchived,
   requireThread,
   requireThreadArchived,
   requireThreadAbsent,
@@ -340,6 +342,51 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
         payload: {
           projectId: command.projectId,
           deletedAt: occurredAt,
+        },
+      };
+    }
+
+    case "project.archive": {
+      yield* requireProjectNotArchived({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project",
+          aggregateId: command.projectId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "project.archived",
+        payload: {
+          projectId: command.projectId,
+          archivedAt: occurredAt,
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "project.unarchive": {
+      yield* requireProjectArchived({
+        readModel,
+        command,
+        projectId: command.projectId,
+      });
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "project",
+          aggregateId: command.projectId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "project.unarchived",
+        payload: {
+          projectId: command.projectId,
+          updatedAt: occurredAt,
         },
       };
     }

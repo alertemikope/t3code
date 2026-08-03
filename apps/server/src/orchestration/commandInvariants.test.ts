@@ -36,6 +36,7 @@ const readModel: OrchestrationReadModel = {
       scripts: [],
       createdAt: now,
       updatedAt: now,
+      archivedAt: null,
       deletedAt: null,
     },
     {
@@ -49,6 +50,7 @@ const readModel: OrchestrationReadModel = {
       scripts: [],
       createdAt: now,
       updatedAt: now,
+      archivedAt: null,
       deletedAt: null,
     },
   ],

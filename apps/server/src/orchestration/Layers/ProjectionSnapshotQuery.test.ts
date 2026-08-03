@@ -277,6 +277,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ],
           createdAt: "2026-02-24T00:00:00.000Z",
           updatedAt: "2026-02-24T00:00:01.000Z",
+          archivedAt: null,
           deletedAt: null,
         },
       ]);
@@ -393,6 +394,7 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
           ],
           createdAt: "2026-02-24T00:00:00.000Z",
           updatedAt: "2026-02-24T00:00:01.000Z",
+          archivedAt: null,
         },
       ]);
       assert.deepEqual(shellSnapshot.threads, [
@@ -1814,6 +1816,140 @@ projectionSnapshotLayer("ProjectionSnapshotQuery", (it) => {
         (yield* snapshotQuery.searchThreads({ query: "user needle" })).matches,
         [],
       );
+    }),
+  );
+});
+
+projectionSnapshotLayer("ProjectionSnapshotQuery project archives", (it) => {
+  it.effect("separates hidden projects and their threads from the active shell", () =>
+    Effect.gen(function* () {
+      const snapshotQuery = yield* ProjectionSnapshotQuery;
+      const sql = yield* SqlClient.SqlClient;
+
+      yield* sql`DELETE FROM projection_projects`;
+      yield* sql`DELETE FROM projection_threads`;
+      yield* sql`DELETE FROM projection_state`;
+
+      yield* sql`
+        INSERT INTO projection_projects (
+          project_id,
+          title,
+          workspace_root,
+          default_model_selection_json,
+          scripts_json,
+          created_at,
+          updated_at,
+          archived_at,
+          deleted_at
+        )
+        VALUES
+          (
+            'project-active',
+            'Active project',
+            '/tmp/project-active',
+            NULL,
+            '[]',
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-01T00:00:00.000Z',
+            NULL,
+            NULL
+          ),
+          (
+            'project-hidden',
+            'Hidden project',
+            '/tmp/project-hidden',
+            NULL,
+            '[]',
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z',
+            NULL
+          ),
+          (
+            'project-deleted',
+            'Deleted project',
+            '/tmp/project-deleted',
+            NULL,
+            '[]',
+            '2026-01-01T00:00:00.000Z',
+            '2026-01-03T00:00:00.000Z',
+            '2026-01-02T00:00:00.000Z',
+            '2026-01-03T00:00:00.000Z'
+          )
+      `;
+
+      yield* sql`
+        INSERT INTO projection_threads (
+          thread_id,
+          project_id,
+          title,
+          model_selection_json,
+          runtime_mode,
+          interaction_mode,
+          branch,
+          worktree_path,
+          latest_turn_id,
+          latest_user_message_at,
+          pending_approval_count,
+          pending_user_input_count,
+          has_actionable_proposed_plan,
+          created_at,
+          updated_at,
+          deleted_at
+        )
+        VALUES (
+          'thread-hidden-project',
+          'project-hidden',
+          'Still active thread',
+          '{"instanceId":"codex","model":"gpt-5-codex"}',
+          'full-access',
+          'default',
+          NULL,
+          NULL,
+          NULL,
+          NULL,
+          0,
+          0,
+          0,
+          '2026-01-01T00:00:00.000Z',
+          '2026-01-01T00:00:00.000Z',
+          NULL
+        )
+      `;
+
+      const active = yield* snapshotQuery.getShellSnapshot();
+      assert.deepStrictEqual(
+        active.projects.map((project) => project.id),
+        [asProjectId("project-active")],
+      );
+      assert.deepStrictEqual(active.threads, []);
+
+      const hidden = yield* snapshotQuery.getArchivedProjectsSnapshot();
+      assert.deepStrictEqual(
+        hidden.projects.map((project) => project.id),
+        [asProjectId("project-hidden")],
+      );
+      assert.equal(hidden.projects[0]?.archivedAt, "2026-01-02T00:00:00.000Z");
+
+      const archivedThreads = yield* snapshotQuery.getArchivedShellSnapshot();
+      assert.deepStrictEqual(archivedThreads.threads, []);
+
+      yield* sql`
+        UPDATE projection_projects
+        SET archived_at = NULL
+        WHERE project_id = 'project-hidden'
+      `;
+      const restored = yield* snapshotQuery.getActiveProjectShellSnapshotById(
+        asProjectId("project-hidden"),
+      );
+      assert.equal(restored._tag, "Some");
+      if (restored._tag === "Some") {
+        assert.equal(restored.value.project.id, asProjectId("project-hidden"));
+        assert.deepStrictEqual(
+          restored.value.threads.map((thread) => thread.id),
+          [ThreadId.make("thread-hidden-project")],
+        );
+      }
     }),
   );
 });

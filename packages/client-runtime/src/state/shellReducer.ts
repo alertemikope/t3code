@@ -28,6 +28,24 @@ export function applyShellStreamEvent(
         projects: Arr.filter(snapshot.projects, (p) => p.id !== event.projectId),
         snapshotSequence: event.sequence,
       };
+    case "project-visibility-changed": {
+      const projectsWithoutTarget = Arr.filter(
+        snapshot.projects,
+        (project) => project.id !== event.projectId,
+      );
+      return {
+        ...snapshot,
+        projects:
+          event.project === null
+            ? projectsWithoutTarget
+            : Arr.append(projectsWithoutTarget, event.project),
+        threads: [
+          ...Arr.filter(snapshot.threads, (thread) => thread.projectId !== event.projectId),
+          ...event.threads,
+        ],
+        snapshotSequence: event.sequence,
+      };
+    }
     case "thread-upserted": {
       const threads = snapshot.threads.some((t) => t.id === event.thread.id)
         ? Arr.map(snapshot.threads, (t) => (t.id === event.thread.id ? event.thread : t))

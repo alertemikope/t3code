@@ -22,11 +22,13 @@ import * as EnvironmentSupervisor from "../connection/supervisor.ts";
 import * as RpcSession from "../rpc/session.ts";
 import type { WsRpcProtocolClient } from "../rpc/protocol.ts";
 import {
+  archiveProject,
   archiveThread,
   createProject,
   settleThread,
   stopThreadSession,
   unsettleThread,
+  unarchiveProject,
 } from "./commands.ts";
 
 const TEST_CRYPTO_LAYER = Layer.succeed(
@@ -136,6 +138,39 @@ describe("environment commands", () => {
           type: "thread.archive",
           commandId: "archive-command",
           threadId: "thread-1",
+        },
+      ]);
+    }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),
+  );
+
+  it.effect("dispatches project archive and restore commands", () =>
+    Effect.gen(function* () {
+      const dispatched: ClientOrchestrationCommand[] = [];
+      const supervisor = yield* makeSupervisor(dispatched);
+      const provideSupervisor = Effect.provideService(
+        EnvironmentSupervisor.EnvironmentSupervisor,
+        supervisor,
+      );
+
+      yield* archiveProject({
+        commandId: CommandId.make("archive-project-command"),
+        projectId: ProjectId.make("project-1"),
+      }).pipe(provideSupervisor);
+      yield* unarchiveProject({
+        commandId: CommandId.make("unarchive-project-command"),
+        projectId: ProjectId.make("project-1"),
+      }).pipe(provideSupervisor);
+
+      expect(dispatched).toEqual([
+        {
+          type: "project.archive",
+          commandId: "archive-project-command",
+          projectId: "project-1",
+        },
+        {
+          type: "project.unarchive",
+          commandId: "unarchive-project-command",
+          projectId: "project-1",
         },
       ]);
     }).pipe(Effect.provide(TEST_CRYPTO_LAYER)),

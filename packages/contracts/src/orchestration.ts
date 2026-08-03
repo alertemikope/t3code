@@ -29,6 +29,7 @@ export const ORCHESTRATION_WS_METHODS = {
   getFullThreadDiff: "orchestration.getFullThreadDiff",
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
+  getArchivedProjectsSnapshot: "orchestration.getArchivedProjectsSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -219,6 +220,7 @@ export const OrchestrationProject = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
   deletedAt: Schema.NullOr(IsoDateTime),
 });
 export type OrchestrationProject = typeof OrchestrationProject.Type;
@@ -404,8 +406,17 @@ export const OrchestrationProjectShell = Schema.Struct({
   scripts: Schema.Array(ProjectScript),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  archivedAt: Schema.NullOr(IsoDateTime).pipe(Schema.withDecodingDefault(Effect.succeed(null))),
 });
 export type OrchestrationProjectShell = typeof OrchestrationProjectShell.Type;
+
+export const OrchestrationArchivedProjectsSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  projects: Schema.Array(OrchestrationProjectShell),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationArchivedProjectsSnapshot =
+  typeof OrchestrationArchivedProjectsSnapshot.Type;
 
 export const OrchestrationThreadShell = Schema.Struct({
   id: ThreadId,
@@ -455,6 +466,13 @@ export const OrchestrationShellStreamEvent = Schema.Union([
     kind: Schema.Literal("project-removed"),
     sequence: NonNegativeInt,
     projectId: ProjectId,
+  }),
+  Schema.Struct({
+    kind: Schema.Literal("project-visibility-changed"),
+    sequence: NonNegativeInt,
+    projectId: ProjectId,
+    project: Schema.NullOr(OrchestrationProjectShell),
+    threads: Schema.Array(OrchestrationThreadShell),
   }),
   Schema.Struct({
     kind: Schema.Literal("thread-upserted"),
@@ -549,6 +567,18 @@ const ProjectDeleteCommand = Schema.Struct({
   commandId: CommandId,
   projectId: ProjectId,
   force: Schema.optional(Schema.Boolean),
+});
+
+const ProjectArchiveCommand = Schema.Struct({
+  type: Schema.Literal("project.archive"),
+  commandId: CommandId,
+  projectId: ProjectId,
+});
+
+const ProjectUnarchiveCommand = Schema.Struct({
+  type: Schema.Literal("project.unarchive"),
+  commandId: CommandId,
+  projectId: ProjectId,
 });
 
 const ThreadCreateCommand = Schema.Struct({
@@ -767,6 +797,8 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
+  ProjectArchiveCommand,
+  ProjectUnarchiveCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -792,6 +824,8 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectCreateCommand,
   ProjectMetaUpdateCommand,
   ProjectDeleteCommand,
+  ProjectArchiveCommand,
+  ProjectUnarchiveCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -928,6 +962,8 @@ export const OrchestrationEventType = Schema.Literals([
   "project.created",
   "project.meta-updated",
   "project.deleted",
+  "project.archived",
+  "project.unarchived",
   "thread.created",
   "thread.deleted",
   "thread.archived",
@@ -982,6 +1018,17 @@ export const ProjectMetaUpdatedPayload = Schema.Struct({
 export const ProjectDeletedPayload = Schema.Struct({
   projectId: ProjectId,
   deletedAt: IsoDateTime,
+});
+
+export const ProjectArchivedPayload = Schema.Struct({
+  projectId: ProjectId,
+  archivedAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ProjectUnarchivedPayload = Schema.Struct({
+  projectId: ProjectId,
+  updatedAt: IsoDateTime,
 });
 
 export const ThreadCreatedPayload = Schema.Struct({
@@ -1197,6 +1244,16 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.deleted"),
     payload: ProjectDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.archived"),
+    payload: ProjectArchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("project.unarchived"),
+    payload: ProjectUnarchivedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -1462,6 +1519,10 @@ export const OrchestrationRpcSchemas = {
   getArchivedShellSnapshot: {
     input: Schema.Struct({}),
     output: OrchestrationShellSnapshot,
+  },
+  getArchivedProjectsSnapshot: {
+    input: Schema.Struct({}),
+    output: OrchestrationArchivedProjectsSnapshot,
   },
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,

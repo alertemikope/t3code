@@ -21,6 +21,7 @@ const stubProject = {
   scripts: [],
   createdAt: "2026-04-01T00:00:00.000Z",
   updatedAt: "2026-04-01T00:00:00.000Z",
+  archivedAt: null,
 } as const;
 
 const stubThread = {
@@ -119,6 +120,37 @@ describe("applyShellStreamEvent", () => {
 
       expect(next.projects).toHaveLength(0);
       expect(next.snapshotSequence).toBe(3);
+    });
+  });
+
+  describe("project-visibility-changed", () => {
+    it("removes and restores a project with its active thread shells", () => {
+      const visible: OrchestrationShellSnapshot = {
+        ...baseSnapshot,
+        projects: [stubProject],
+        threads: [stubThread],
+      };
+      const hidden = applyShellStreamEvent(visible, {
+        kind: "project-visibility-changed",
+        sequence: 1,
+        projectId: stubProject.id,
+        project: null,
+        threads: [],
+      });
+
+      expect(hidden.projects).toEqual([]);
+      expect(hidden.threads).toEqual([]);
+
+      const restored = applyShellStreamEvent(hidden, {
+        kind: "project-visibility-changed",
+        sequence: 2,
+        projectId: stubProject.id,
+        project: stubProject,
+        threads: [stubThread],
+      });
+
+      expect(restored.projects).toEqual([stubProject]);
+      expect(restored.threads).toEqual([stubThread]);
     });
   });
 

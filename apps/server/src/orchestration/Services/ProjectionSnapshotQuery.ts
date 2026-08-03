@@ -8,6 +8,7 @@
  */
 import type {
   CheckpointRef,
+  OrchestrationArchivedProjectsSnapshot,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -34,6 +35,11 @@ export interface ProjectionSnapshotCounts {
 
 export interface ProjectionSnapshotSequence {
   readonly snapshotSequence: number;
+}
+
+export interface ProjectionProjectShellSnapshot {
+  readonly project: OrchestrationProjectShell;
+  readonly threads: ReadonlyArray<OrchestrationThreadShell>;
 }
 
 export interface ProjectionThreadCheckpointContext {
@@ -96,6 +102,12 @@ export interface ProjectionSnapshotQueryShape {
     ProjectionRepositoryError
   >;
 
+  /** Read hidden project shells without loading their threads. */
+  readonly getArchivedProjectsSnapshot: () => Effect.Effect<
+    OrchestrationArchivedProjectsSnapshot,
+    ProjectionRepositoryError
+  >;
+
   /**
    * Search active thread navigation metadata, user messages, and canonical
    * assistant outputs without hydrating thread detail snapshots.
@@ -131,6 +143,11 @@ export interface ProjectionSnapshotQueryShape {
   readonly getProjectShellById: (
     projectId: ProjectId,
   ) => Effect.Effect<Option.Option<OrchestrationProjectShell>, ProjectionRepositoryError>;
+
+  /** Read one visible project and all of its active thread shells atomically. */
+  readonly getActiveProjectShellSnapshotById: (
+    projectId: ProjectId,
+  ) => Effect.Effect<Option.Option<ProjectionProjectShellSnapshot>, ProjectionRepositoryError>;
 
   /**
    * Read the earliest active thread for a project.

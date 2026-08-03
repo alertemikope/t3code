@@ -545,6 +545,9 @@ const makeWsRpcLayer = (
           case "project.created":
           case "project.meta-updated":
             return projectUpsertOrRemove(event.payload.projectId, event.sequence);
+          case "project.archived":
+          case "project.unarchived":
+            return projectVisibilityChanged(event.payload.projectId, event.sequence);
           case "project.deleted":
             return Effect.succeed(
               Option.some({
@@ -609,9 +612,11 @@ const makeWsRpcLayer = (
               Option.match(project, {
                 onNone: () =>
                   Option.some<OrchestrationShellStreamEvent>({
-                    kind: "project-removed" as const,
+                    kind: "project-visibility-changed" as const,
                     sequence,
                     projectId,
+                    project: null,
+                    threads: [],
                   }),
                 onSome: (nextProject) =>
                   Option.some<OrchestrationShellStreamEvent>({
@@ -619,6 +624,37 @@ const makeWsRpcLayer = (
                     sequence,
                     project: nextProject,
                   }),
+              }),
+            ),
+          ),
+        );
+
+      const projectVisibilityChanged = (
+        projectId: ProjectId,
+        sequence: number,
+      ): Effect.Effect<Option.Option<OrchestrationShellStreamEvent>, never, never> =>
+        retryShellProjectionRead(
+          "project",
+          projectId,
+          projectionSnapshotQuery.getActiveProjectShellSnapshotById(projectId),
+        ).pipe(
+          Effect.map(
+            Option.map((snapshot) =>
+              Option.match(snapshot, {
+                onNone: (): OrchestrationShellStreamEvent => ({
+                  kind: "project-visibility-changed",
+                  sequence,
+                  projectId,
+                  project: null,
+                  threads: [],
+                }),
+                onSome: (active): OrchestrationShellStreamEvent => ({
+                  kind: "project-visibility-changed",
+                  sequence,
+                  projectId,
+                  project: active.project,
+                  threads: active.threads,
+                }),
               }),
             ),
           ),
@@ -1246,6 +1282,23 @@ const makeWsRpcLayer = (
                 (cause) =>
                   new OrchestrationGetSnapshotError({
                     message: "Failed to load archived orchestration shell snapshot",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
+        [ORCHESTRATION_WS_METHODS.getArchivedProjectsSnapshot]: (_input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getArchivedProjectsSnapshot,
+            projectionSnapshotQuery.getArchivedProjectsSnapshot().pipe(
+              Effect.tapError((cause) =>
+                Effect.logError("orchestration archived projects snapshot load failed", { cause }),
+              ),
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Failed to load archived orchestration projects snapshot",
                     cause,
                   }),
               ),

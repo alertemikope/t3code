@@ -10,17 +10,23 @@ import {
 } from "./runtime.ts";
 import {
   type CreateProjectInput,
+  type ArchiveProjectInput,
   type DeleteProjectInput,
+  type UnarchiveProjectInput,
   type UpdateProjectInput,
+  archiveProject,
   createProject,
   deleteProject,
+  unarchiveProject,
   updateProject,
 } from "../operations/commands.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export type {
   CreateProjectInput,
+  ArchiveProjectInput,
   DeleteProjectInput,
+  UnarchiveProjectInput,
   UpdateProjectInput,
 } from "../operations/commands.ts";
 
@@ -89,6 +95,18 @@ export function createProjectEnvironmentAtoms<R, E>(
     delete: createEnvironmentCommand(runtime, {
       label: "environment-data:commands:project:delete",
       execute: (input: DeleteProjectInput) => deleteProject(input),
+      scheduler: projectScheduler,
+      concurrency: projectConcurrency,
+    }),
+    archive: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:project:archive",
+      execute: (input: ArchiveProjectInput) => archiveProject(input),
+      scheduler: projectScheduler,
+      concurrency: projectConcurrency,
+    }),
+    unarchive: createEnvironmentCommand(runtime, {
+      label: "environment-data:commands:project:unarchive",
+      execute: (input: UnarchiveProjectInput) => unarchiveProject(input),
       scheduler: projectScheduler,
       concurrency: projectConcurrency,
     }),
