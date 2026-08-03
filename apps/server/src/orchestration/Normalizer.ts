@@ -100,6 +100,18 @@ export const normalizeDispatchCommand = (command: ClientOrchestrationCommand) =>
       } satisfies OrchestrationCommand;
     }
 
+    if (canonicalCommand.type === "channel.message.send") {
+      if (canonicalCommand.message.attachments.length > 0) {
+        return yield* new OrchestrationDispatchCommandError({
+          message: "Channel image attachments are not supported yet.",
+        });
+      }
+      return {
+        ...canonicalCommand,
+        message: { ...canonicalCommand.message, attachments: [] },
+      } satisfies OrchestrationCommand;
+    }
+
     if (canonicalCommand.type !== "thread.turn.start") {
       return canonicalCommand as OrchestrationCommand;
     }

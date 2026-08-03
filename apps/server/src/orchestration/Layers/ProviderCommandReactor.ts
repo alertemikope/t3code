@@ -1096,9 +1096,12 @@ const make = Effect.gen(function* () {
         ),
       );
 
+    const providerMessageText = event.payload.instructions?.trim()
+      ? `Follow this Agent profile for the channel:\n${event.payload.instructions.trim()}\n\nUser request:\n${message.text}`
+      : message.text;
     const sendTurnRequest = yield* buildSendTurnRequestForThread({
       threadId: event.payload.threadId,
-      messageText: message.text,
+      messageText: providerMessageText,
       ...(message.attachments !== undefined ? { attachments: message.attachments } : {}),
       ...(event.payload.modelSelection !== undefined
         ? { modelSelection: event.payload.modelSelection }

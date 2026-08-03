@@ -1,5 +1,14 @@
 import type { OrchestrationEvent, OrchestrationReadModel, ThreadId } from "@t3tools/contracts";
 import {
+  AgentCreatedPayload,
+  AgentDeletedPayload,
+  AgentUpdatedPayload,
+  ChannelCreatedPayload,
+  ChannelDeletedPayload,
+  ChannelUpdatedPayload,
+  OrchestrationAgent,
+  OrchestrationChannel,
+  OrchestrationChannelMessage,
   OrchestrationCheckpointSummary,
   OrchestrationMessage,
   OrchestrationSession,
@@ -189,6 +198,9 @@ export function createEmptyReadModel(nowIso: string): OrchestrationReadModel {
     snapshotSequence: 0,
     projects: [],
     threads: [],
+    agents: [],
+    channels: [],
+    channelMessages: [],
     updatedAt: nowIso,
   };
 }
@@ -302,6 +314,99 @@ export function projectEvent(
         })),
       );
 
+    case "agent.created":
+      return decodeForEvent(AgentCreatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.flatMap((payload) =>
+          decodeForEvent(
+            OrchestrationAgent,
+            { id: payload.agentId, ...payload, deletedAt: null },
+            event.type,
+            "agent",
+          ),
+        ),
+        Effect.map((agent) => ({
+          ...nextBase,
+          agents: [...(nextBase.agents ?? []).filter((entry) => entry.id !== agent.id), agent],
+        })),
+      );
+
+    case "agent.updated":
+      return decodeForEvent(AgentUpdatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          agents: (nextBase.agents ?? []).map((agent) =>
+            agent.id === payload.agentId
+              ? {
+                  ...agent,
+                  ...(payload.name !== undefined ? { name: payload.name } : {}),
+                  ...(payload.role !== undefined ? { role: payload.role } : {}),
+                  ...(payload.instructions !== undefined
+                    ? { instructions: payload.instructions }
+                    : {}),
+                  ...(payload.modelSelection !== undefined
+                    ? { modelSelection: payload.modelSelection }
+                    : {}),
+                  ...(payload.runtimeMode !== undefined
+                    ? { runtimeMode: payload.runtimeMode }
+                    : {}),
+                  updatedAt: payload.updatedAt,
+                }
+              : agent,
+          ),
+        })),
+      );
+
+    case "agent.deleted":
+      return decodeForEvent(AgentDeletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          agents: (nextBase.agents ?? []).map((agent) =>
+            agent.id === payload.agentId ? { ...agent, deletedAt: payload.deletedAt } : agent,
+          ),
+        })),
+      );
+
+    case "channel.created":
+      return decodeForEvent(ChannelCreatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.flatMap((payload) =>
+          decodeForEvent(
+            OrchestrationChannel,
+            { id: payload.channelId, ...payload, deletedAt: null },
+            event.type,
+            "channel",
+          ),
+        ),
+        Effect.map((channel) => ({
+          ...nextBase,
+          channels: [
+            ...(nextBase.channels ?? []).filter((entry) => entry.id !== channel.id),
+            channel,
+          ],
+        })),
+      );
+
+    case "channel.updated":
+      return decodeForEvent(ChannelUpdatedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          channels: (nextBase.channels ?? []).map((channel) =>
+            channel.id === payload.channelId ? { ...channel, ...payload } : channel,
+          ),
+        })),
+      );
+
+    case "channel.deleted":
+      return decodeForEvent(ChannelDeletedPayload, event.payload, event.type, "payload").pipe(
+        Effect.map((payload) => ({
+          ...nextBase,
+          channels: (nextBase.channels ?? []).map((channel) =>
+            channel.id === payload.channelId
+              ? { ...channel, deletedAt: payload.deletedAt }
+              : channel,
+          ),
+        })),
+      );
+
     case "thread.created":
       return Effect.gen(function* () {
         const payload = yield* decodeForEvent(
@@ -321,6 +426,7 @@ export function projectEvent(
             interactionMode: payload.interactionMode,
             branch: payload.branch,
             worktreePath: payload.worktreePath,
+            surface: payload.surface ?? "thread",
             latestTurn: null,
             createdAt: payload.createdAt,
             updatedAt: payload.updatedAt,
@@ -526,9 +632,45 @@ export function projectEvent(
             )
           : [...thread.messages, message];
         const cappedMessages = messages.slice(-MAX_THREAD_MESSAGES);
+        const channel = (nextBase.channels ?? []).find(
+          (entry) => entry.threadId === payload.threadId && entry.deletedAt === null,
+        );
+        let channelMessages = nextBase.channelMessages ?? [];
+        if (
+          channel &&
+          !channelMessages.some(
+            (entry) => entry.channelId === channel.id && entry.threadMessageId === message.id,
+          )
+        ) {
+          const previous = channelMessages.findLast((entry) => entry.channelId === channel.id);
+          const parentMessageId =
+            payload.channel !== undefined
+              ? payload.channel.parentMessageId
+              : (previous?.id ?? null);
+          const rootMessageId =
+            payload.channel?.rootMessageId ?? previous?.rootMessageId ?? message.id;
+          const channelMessage = yield* decodeForEvent(
+            OrchestrationChannelMessage,
+            {
+              id: message.id,
+              channelId: channel.id,
+              threadMessageId: message.id,
+              role: message.role,
+              text: message.text,
+              parentMessageId,
+              rootMessageId,
+              sequence: event.sequence,
+              createdAt: message.createdAt,
+            },
+            event.type,
+            "channelMessage",
+          );
+          channelMessages = [...channelMessages, channelMessage];
+        }
 
         return {
           ...nextBase,
+          channelMessages,
           threads: updateThread(nextBase.threads, payload.threadId, {
             messages: cappedMessages,
             updatedAt: event.occurredAt,

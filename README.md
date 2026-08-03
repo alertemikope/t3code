@@ -12,8 +12,11 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 > [!NOTE]
 > This fork adds first-class Ocean and Pi access, per-thread model/thinking
-> selection, native session import, and a safe upstream updater. See the
-> [Ocean and Pi integration guide](./docs/user/ocean-pi.md).
+> selection, native session import, project hiding/removal, Buzz-inspired
+> channels with reusable agents, and a safe upstream updater. See the
+> [Ocean and Pi integration guide](./docs/user/ocean-pi.md),
+> [project archive guide](./docs/user/archive.md), and
+> [Channels guide](./docs/user/channels.md).
 
 ## Installation
 
@@ -72,6 +75,8 @@ Full docs live in [docs/](./docs). There's no docs site yet.
 
 - [Install and first run](./docs/user/install.md)
 - [Permission modes](./docs/user/permission-modes.md)
+- [Hide, restore, and remove projects](./docs/user/archive.md)
+- [Channels and reusable agents](./docs/user/channels.md)
 - [Keyboard shortcuts](./docs/user/keybindings.md)
 - [Remote access from a phone or another machine](./docs/user/remote-access.md)
 - [Keeping app and server in sync](./docs/user/updating.md)

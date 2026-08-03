@@ -1,4 +1,6 @@
 import type {
+  AgentId,
+  ChannelId,
   OrchestrationEvent,
   OrchestrationReadModel,
   ProjectId,
@@ -57,8 +59,8 @@ interface CommandEnvelope {
 }
 
 function commandToAggregateRef(command: OrchestrationCommand): {
-  readonly aggregateKind: "project" | "thread";
-  readonly aggregateId: ProjectId | ThreadId;
+  readonly aggregateKind: "project" | "thread" | "agent" | "channel";
+  readonly aggregateId: ProjectId | ThreadId | AgentId | ChannelId;
 } {
   switch (command.type) {
     case "project.create":
@@ -70,6 +72,15 @@ function commandToAggregateRef(command: OrchestrationCommand): {
         aggregateKind: "project",
         aggregateId: command.projectId,
       };
+    case "agent.create":
+    case "agent.update":
+    case "agent.delete":
+      return { aggregateKind: "agent", aggregateId: command.agentId };
+    case "channel.create":
+    case "channel.update":
+    case "channel.delete":
+    case "channel.message.send":
+      return { aggregateKind: "channel", aggregateId: command.channelId };
     default:
       return {
         aggregateKind: "thread",

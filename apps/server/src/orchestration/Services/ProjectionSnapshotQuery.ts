@@ -7,8 +7,10 @@
  * @module ProjectionSnapshotQuery
  */
 import type {
+  ChannelId,
   CheckpointRef,
   OrchestrationArchivedProjectsSnapshot,
+  OrchestrationChannelsSnapshot,
   OrchestrationCheckpointSummary,
   OrchestrationProject,
   OrchestrationProjectShell,
@@ -107,6 +109,11 @@ export interface ProjectionSnapshotQueryShape {
     OrchestrationArchivedProjectsSnapshot,
     ProjectionRepositoryError
   >;
+
+  /** Read durable Agent profiles, Channels, and append-only message links. */
+  readonly getChannelsSnapshot?: (
+    channelId?: ChannelId,
+  ) => Effect.Effect<OrchestrationChannelsSnapshot, ProjectionRepositoryError>;
 
   /**
    * Search active thread navigation metadata, user messages, and canonical

@@ -3,6 +3,7 @@ import {
   type ChatAttachment,
   type OrchestrationEvent,
   type OrchestrationSessionStatus,
+  ModelSelection,
   ThreadId,
 } from "@t3tools/contracts";
 import * as Effect from "effect/Effect";
@@ -12,6 +13,7 @@ import * as Option from "effect/Option";
 import * as Path from "effect/Path";
 import * as Stream from "effect/Stream";
 import * as SqlClient from "effect/unstable/sql/SqlClient";
+import * as Schema from "effect/Schema";
 
 import { toPersistenceSqlError, type ProjectionRepositoryError } from "../../persistence/Errors.ts";
 import { OrchestrationEventStore } from "../../persistence/Services/OrchestrationEventStore.ts";
@@ -57,6 +59,7 @@ import {
 
 export const ORCHESTRATION_PROJECTOR_NAMES = {
   projects: "projection.projects",
+  channels: "projection.channels",
   threads: "projection.threads",
   threadMessages: "projection.thread-messages",
   threadProposedPlans: "projection.thread-proposed-plans",
@@ -69,6 +72,7 @@ export const ORCHESTRATION_PROJECTOR_NAMES = {
 
 type ProjectorName =
   (typeof ORCHESTRATION_PROJECTOR_NAMES)[keyof typeof ORCHESTRATION_PROJECTOR_NAMES];
+const encodeModelSelectionJson = Schema.encodeSync(Schema.fromJsonString(ModelSelection));
 
 /**
  * Turn state to settle still-running turns with when their session leaves the
@@ -634,6 +638,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
             interactionMode: event.payload.interactionMode,
             branch: event.payload.branch,
             worktreePath: event.payload.worktreePath,
+            surface: event.payload.surface ?? "thread",
             latestTurnId: null,
             createdAt: event.payload.createdAt,
             updatedAt: event.payload.updatedAt,
@@ -915,6 +920,144 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
           return;
       }
     });
+
+    const applyChannelsProjection: ProjectorDefinition["apply"] = (event) =>
+      Effect.gen(function* () {
+        switch (event.type) {
+          case "agent.created":
+            yield* sql`
+              INSERT INTO projection_agents (
+                agent_id, name, role, instructions, model_selection_json,
+                runtime_mode, created_at, updated_at, deleted_at
+              ) VALUES (
+                ${event.payload.agentId}, ${event.payload.name}, ${event.payload.role},
+                ${event.payload.instructions}, ${encodeModelSelectionJson(event.payload.modelSelection)},
+                ${event.payload.runtimeMode}, ${event.payload.createdAt},
+                ${event.payload.updatedAt}, NULL
+              )
+              ON CONFLICT (agent_id) DO UPDATE SET
+                name = excluded.name,
+                role = excluded.role,
+                instructions = excluded.instructions,
+                model_selection_json = excluded.model_selection_json,
+                runtime_mode = excluded.runtime_mode,
+                updated_at = excluded.updated_at,
+                deleted_at = NULL
+            `;
+            return;
+
+          case "agent.updated":
+            yield* sql`
+              UPDATE projection_agents SET
+                name = COALESCE(${event.payload.name ?? null}, name),
+                role = COALESCE(${event.payload.role ?? null}, role),
+                instructions = COALESCE(${event.payload.instructions ?? null}, instructions),
+                model_selection_json = COALESCE(${event.payload.modelSelection ? encodeModelSelectionJson(event.payload.modelSelection) : null}, model_selection_json),
+                runtime_mode = COALESCE(${event.payload.runtimeMode ?? null}, runtime_mode),
+                updated_at = ${event.payload.updatedAt}
+              WHERE agent_id = ${event.payload.agentId}
+            `;
+            return;
+
+          case "agent.deleted":
+            yield* sql`
+              UPDATE projection_agents
+              SET deleted_at = ${event.payload.deletedAt}, updated_at = ${event.payload.deletedAt}
+              WHERE agent_id = ${event.payload.agentId}
+            `;
+            return;
+
+          case "channel.created":
+            yield* sql`
+              INSERT INTO projection_channels (
+                channel_id, project_id, agent_id, name, technical_thread_id,
+                created_at, updated_at, deleted_at
+              ) VALUES (
+                ${event.payload.channelId}, ${event.payload.projectId},
+                ${event.payload.agentId}, ${event.payload.name}, ${event.payload.threadId},
+                ${event.payload.createdAt}, ${event.payload.updatedAt}, NULL
+              )
+              ON CONFLICT (channel_id) DO UPDATE SET
+                project_id = excluded.project_id,
+                agent_id = excluded.agent_id,
+                name = excluded.name,
+                technical_thread_id = excluded.technical_thread_id,
+                updated_at = excluded.updated_at,
+                deleted_at = NULL
+            `;
+            return;
+
+          case "channel.updated":
+            yield* sql`
+              UPDATE projection_channels
+              SET name = ${event.payload.name}, updated_at = ${event.payload.updatedAt}
+              WHERE channel_id = ${event.payload.channelId}
+            `;
+            return;
+
+          case "channel.deleted":
+            yield* sql`
+              UPDATE projection_channels
+              SET deleted_at = ${event.payload.deletedAt}, updated_at = ${event.payload.deletedAt}
+              WHERE channel_id = ${event.payload.channelId}
+            `;
+            return;
+
+          case "thread.message-sent": {
+            const channels = yield* sql<{ readonly channelId: string }>`
+              SELECT channel_id AS "channelId"
+              FROM projection_channels
+              WHERE technical_thread_id = ${event.payload.threadId}
+                AND deleted_at IS NULL
+              LIMIT 1
+            `;
+            const channel = channels[0];
+            if (!channel) return;
+            const existing = yield* sql<{ readonly messageId: string }>`
+              SELECT message_id AS "messageId"
+              FROM projection_channel_messages
+              WHERE technical_message_id = ${event.payload.messageId}
+              LIMIT 1
+            `;
+            if (existing.length > 0) return;
+            const previousRows = yield* sql<{
+              readonly messageId: string;
+              readonly rootMessageId: string;
+            }>`
+              SELECT
+                message_id AS "messageId",
+                root_message_id AS "rootMessageId"
+              FROM projection_channel_messages
+              WHERE channel_id = ${channel.channelId}
+              ORDER BY sequence DESC, message_id DESC
+              LIMIT 1
+            `;
+            const previous = previousRows[0];
+            const parentMessageId =
+              event.payload.channel !== undefined
+                ? event.payload.channel.parentMessageId
+                : (previous?.messageId ?? null);
+            const rootMessageId =
+              event.payload.channel?.rootMessageId ??
+              previous?.rootMessageId ??
+              event.payload.messageId;
+            yield* sql`
+              INSERT OR IGNORE INTO projection_channel_messages (
+                message_id, channel_id, technical_message_id, role,
+                parent_message_id, root_message_id, sequence, created_at
+              ) VALUES (
+                ${event.payload.messageId}, ${channel.channelId}, ${event.payload.messageId},
+                ${event.payload.role}, ${parentMessageId}, ${rootMessageId},
+                ${event.sequence}, ${event.payload.createdAt}
+              )
+            `;
+            return;
+          }
+
+          default:
+            return;
+        }
+      }).pipe(Effect.mapError(toPersistenceSqlError("ProjectionPipeline.channels:query")));
 
     const applyThreadMessagesProjection: ProjectorDefinition["apply"] = Effect.fn(
       "applyThreadMessagesProjection",
@@ -1581,6 +1724,10 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.projects,
         apply: applyProjectsProjection,
+      },
+      {
+        name: ORCHESTRATION_PROJECTOR_NAMES.channels,
+        apply: applyChannelsProjection,
       },
       {
         name: ORCHESTRATION_PROJECTOR_NAMES.threadMessages,

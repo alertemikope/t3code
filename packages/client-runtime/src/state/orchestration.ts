@@ -1,7 +1,7 @@
 import { ORCHESTRATION_WS_METHODS } from "@t3tools/contracts";
 import { Atom } from "effect/unstable/reactivity";
 
-import { createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
+import { createEnvironmentRpcCommand, createEnvironmentRpcQueryAtomFamily } from "./runtime.ts";
 import type { EnvironmentRegistry } from "../connection/registry.ts";
 
 export function createOrchestrationEnvironmentAtoms<R, E>(
@@ -29,6 +29,14 @@ export function createOrchestrationEnvironmentAtoms<R, E>(
     archivedProjectsSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
       label: "environment-data:orchestration:archived-projects-snapshot",
       tag: ORCHESTRATION_WS_METHODS.getArchivedProjectsSnapshot,
+    }),
+    channelsSnapshot: createEnvironmentRpcQueryAtomFamily(runtime, {
+      label: "environment-data:orchestration:channels-snapshot",
+      tag: ORCHESTRATION_WS_METHODS.getChannelsSnapshot,
+    }),
+    dispatchCommand: createEnvironmentRpcCommand(runtime, {
+      label: "environment-data:orchestration:dispatch-command",
+      tag: ORCHESTRATION_WS_METHODS.dispatchCommand,
     }),
   };
 }

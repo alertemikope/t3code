@@ -304,21 +304,34 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       const activeThreads = listThreadsByProjectId(readModel, command.projectId).filter(
         (thread) => thread.deletedAt === null,
       );
-      if (activeThreads.length > 0 && command.force !== true) {
+      const activeChannels = (readModel.channels ?? []).filter(
+        (channel) => channel.projectId === command.projectId && channel.deletedAt === null,
+      );
+      if ((activeThreads.length > 0 || activeChannels.length > 0) && command.force !== true) {
         return yield* new OrchestrationCommandInvariantError({
           commandType: command.type,
           detail: `Project '${command.projectId}' is not empty and cannot be deleted without force=true.`,
         });
       }
-      if (activeThreads.length > 0) {
+      if (activeThreads.length > 0 || activeChannels.length > 0) {
+        const channelThreadIds = new Set(activeChannels.map((channel) => channel.threadId));
         return yield* decideCommandSequence({
           readModel,
           commands: [
-            ...activeThreads.map(
-              (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
-                type: "thread.delete",
+            ...activeThreads
+              .filter((thread) => !channelThreadIds.has(thread.id))
+              .map(
+                (thread): Extract<OrchestrationCommand, { type: "thread.delete" }> => ({
+                  type: "thread.delete",
+                  commandId: command.commandId,
+                  threadId: thread.id,
+                }),
+              ),
+            ...activeChannels.map(
+              (channel): Extract<OrchestrationCommand, { type: "channel.delete" }> => ({
+                type: "channel.delete",
                 commandId: command.commandId,
-                threadId: thread.id,
+                channelId: channel.id,
               }),
             ),
             {
@@ -391,6 +404,318 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
       };
     }
 
+    case "agent.create": {
+      if ((readModel.agents ?? []).some((agent) => agent.id === command.agentId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Agent '${command.agentId}' already exists.`,
+        });
+      }
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "agent",
+          aggregateId: command.agentId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "agent.created",
+        payload: {
+          agentId: command.agentId,
+          name: command.name,
+          role: command.role,
+          instructions: command.instructions,
+          modelSelection: command.modelSelection,
+          runtimeMode: command.runtimeMode,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+    }
+
+    case "agent.update": {
+      const agent = (readModel.agents ?? []).find(
+        (entry) => entry.id === command.agentId && entry.deletedAt === null,
+      );
+      if (!agent) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Agent '${command.agentId}' does not exist.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "agent",
+          aggregateId: command.agentId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "agent.updated",
+        payload: {
+          agentId: command.agentId,
+          ...(command.name !== undefined ? { name: command.name } : {}),
+          ...(command.role !== undefined ? { role: command.role } : {}),
+          ...(command.instructions !== undefined ? { instructions: command.instructions } : {}),
+          ...(command.modelSelection !== undefined
+            ? { modelSelection: command.modelSelection }
+            : {}),
+          ...(command.runtimeMode !== undefined ? { runtimeMode: command.runtimeMode } : {}),
+          updatedAt: occurredAt,
+        },
+      };
+    }
+
+    case "agent.delete": {
+      const agent = (readModel.agents ?? []).find(
+        (entry) => entry.id === command.agentId && entry.deletedAt === null,
+      );
+      if (!agent) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Agent '${command.agentId}' does not exist.`,
+        });
+      }
+      if (
+        (readModel.channels ?? []).some(
+          (channel) => channel.agentId === command.agentId && channel.deletedAt === null,
+        )
+      ) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Agent '${command.agentId}' is still assigned to a channel.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "agent",
+          aggregateId: command.agentId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "agent.deleted",
+        payload: { agentId: command.agentId, deletedAt: occurredAt },
+      };
+    }
+
+    case "channel.create": {
+      yield* requireProjectNotArchived({ readModel, command, projectId: command.projectId });
+      yield* requireThreadAbsent({ readModel, command, threadId: command.threadId });
+      if ((readModel.channels ?? []).some((channel) => channel.id === command.channelId)) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Channel '${command.channelId}' already exists.`,
+        });
+      }
+      const agent = (readModel.agents ?? []).find(
+        (entry) => entry.id === command.agentId && entry.deletedAt === null,
+      );
+      if (!agent) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Agent '${command.agentId}' does not exist.`,
+        });
+      }
+      const threadEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: command.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.created",
+        payload: {
+          threadId: command.threadId,
+          projectId: command.projectId,
+          title: `#${command.name}`,
+          modelSelection: agent.modelSelection,
+          runtimeMode: agent.runtimeMode,
+          interactionMode: "default",
+          branch: null,
+          worktreePath: null,
+          surface: "channel",
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      const channelEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "channel",
+          aggregateId: command.channelId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: threadEvent.eventId,
+        type: "channel.created",
+        payload: {
+          channelId: command.channelId,
+          projectId: command.projectId,
+          agentId: command.agentId,
+          name: command.name,
+          threadId: command.threadId,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+        },
+      };
+      return [threadEvent, channelEvent];
+    }
+
+    case "channel.update": {
+      const channel = (readModel.channels ?? []).find(
+        (entry) => entry.id === command.channelId && entry.deletedAt === null,
+      );
+      if (!channel) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Channel '${command.channelId}' does not exist.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      return {
+        ...(yield* withEventBase({
+          aggregateKind: "channel",
+          aggregateId: command.channelId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "channel.updated",
+        payload: { channelId: command.channelId, name: command.name, updatedAt: occurredAt },
+      };
+    }
+
+    case "channel.delete": {
+      const channel = (readModel.channels ?? []).find(
+        (entry) => entry.id === command.channelId && entry.deletedAt === null,
+      );
+      if (!channel) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Channel '${command.channelId}' does not exist.`,
+        });
+      }
+      const occurredAt = yield* nowIso;
+      const threadDeleted: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: channel.threadId,
+          occurredAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.deleted",
+        payload: { threadId: channel.threadId, deletedAt: occurredAt },
+      };
+      return [
+        threadDeleted,
+        {
+          ...(yield* withEventBase({
+            aggregateKind: "channel",
+            aggregateId: command.channelId,
+            occurredAt,
+            commandId: command.commandId,
+          })),
+          causationEventId: threadDeleted.eventId,
+          type: "channel.deleted",
+          payload: { channelId: command.channelId, deletedAt: occurredAt },
+        },
+      ];
+    }
+
+    case "channel.message.send": {
+      const channel = (readModel.channels ?? []).find(
+        (entry) => entry.id === command.channelId && entry.deletedAt === null,
+      );
+      if (!channel) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Channel '${command.channelId}' does not exist.`,
+        });
+      }
+      yield* requireProjectNotArchived({
+        readModel,
+        command,
+        projectId: channel.projectId,
+      });
+      const thread = yield* requireThreadNotArchived({
+        readModel,
+        command,
+        threadId: channel.threadId,
+      });
+      const agent = (readModel.agents ?? []).find(
+        (entry) => entry.id === channel.agentId && entry.deletedAt === null,
+      );
+      if (!agent) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Channel agent '${channel.agentId}' does not exist.`,
+        });
+      }
+      const channelMessages = readModel.channelMessages ?? [];
+      const parent = command.message.parentMessageId
+        ? channelMessages.find(
+            (message) =>
+              message.id === command.message.parentMessageId && message.channelId === channel.id,
+          )
+        : undefined;
+      if (command.message.parentMessageId && !parent) {
+        return yield* new OrchestrationCommandInvariantError({
+          commandType: command.type,
+          detail: `Parent message '${command.message.parentMessageId}' does not exist in channel '${channel.id}'.`,
+        });
+      }
+      const rootMessageId = parent?.rootMessageId ?? command.message.messageId;
+      const userMessageEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: channel.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        type: "thread.message-sent",
+        payload: {
+          threadId: channel.threadId,
+          messageId: command.message.messageId,
+          role: "user",
+          text: command.message.text,
+          attachments: command.message.attachments,
+          turnId: null,
+          streaming: false,
+          createdAt: command.createdAt,
+          updatedAt: command.createdAt,
+          channel: {
+            channelId: channel.id,
+            parentMessageId: parent?.id ?? null,
+            rootMessageId,
+          },
+        },
+      };
+      const turnStartEvent: Omit<OrchestrationEvent, "sequence"> = {
+        ...(yield* withEventBase({
+          aggregateKind: "thread",
+          aggregateId: channel.threadId,
+          occurredAt: command.createdAt,
+          commandId: command.commandId,
+        })),
+        causationEventId: userMessageEvent.eventId,
+        type: "thread.turn-start-requested",
+        payload: {
+          threadId: channel.threadId,
+          messageId: command.message.messageId,
+          modelSelection: agent.modelSelection,
+          runtimeMode: agent.runtimeMode,
+          interactionMode: thread.interactionMode,
+          instructions: [
+            `Role: ${agent.role}`,
+            agent.instructions,
+            parent ? `Reply context:\n${parent.text}` : "",
+          ]
+            .filter((part) => part.trim().length > 0)
+            .join("\n\n"),
+          createdAt: command.createdAt,
+        },
+      };
+      return [userMessageEvent, turnStartEvent];
+    }
+
     case "thread.create": {
       yield* requireProject({
         readModel,
@@ -419,6 +744,7 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
           interactionMode: command.interactionMode,
           branch: command.branch,
           worktreePath: command.worktreePath,
+          surface: command.surface ?? "thread",
           createdAt: command.createdAt,
           updatedAt: command.createdAt,
         },

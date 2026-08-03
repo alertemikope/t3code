@@ -34,6 +34,14 @@ A Git worktree used as an isolated workspace for a thread. If a thread has a `wo
 
 The main durable unit of conversation and workspace history. In [the orchestration contracts][1], a thread holds messages, activities, checkpoints, and session-related state. See [projector.ts][4].
 
+#### Agent
+
+A reusable configuration for channel work. It gives a provider-backed agent a stable name, role, instructions, model selection, and runtime mode. It is domain state rather than a running provider session.
+
+#### Channel
+
+A project-scoped conversation assigned to one configured agent. A channel owns a technical thread with `surface: "channel"`; provider and checkpoint services use that thread normally, while shell projections omit it from regular thread lists. Channel messages retain explicit parent and root links for reply-based steering.
+
 #### Turn
 
 A single user-to-assistant work cycle inside a thread. It starts with user input and ends when the session leaves `running` status, which [projector.ts][4] treats as the authoritative completion signal (`settledTurnStateForSessionStatus`). Checkpoint and diff work may settle afterward without changing when the turn ended. See [the contracts][1] and [ProviderRuntimeIngestion.ts][5].
@@ -48,7 +56,7 @@ Orchestration is the server-side domain layer that turns runtime activity into s
 
 #### Aggregate
 
-The domain object a command or event belongs to. In [the contracts][1], that is usually `project` or `thread`. See [decider.ts][8].
+The domain object a command or event belongs to. In [the contracts][1], that can be a `project`, `thread`, `agent`, or `channel`. See [decider.ts][8].
 
 #### Command
 

@@ -1,9 +1,14 @@
 import {
   ChatAttachment,
+  ChannelId,
   CheckpointRef,
   IsoDateTime,
   MessageId,
   NonNegativeInt,
+  OrchestrationAgent,
+  OrchestrationChannel,
+  OrchestrationChannelMessage,
+  OrchestrationChannelsSnapshot,
   OrchestrationCheckpointFile,
   OrchestrationArchivedProjectsSnapshot,
   OrchestrationProposedPlanId,
@@ -67,6 +72,7 @@ const decodeShellSnapshot = Schema.decodeUnknownEffect(OrchestrationShellSnapsho
 const decodeArchivedProjectsSnapshot = Schema.decodeUnknownEffect(
   OrchestrationArchivedProjectsSnapshot,
 );
+const decodeChannelsSnapshot = Schema.decodeUnknownEffect(OrchestrationChannelsSnapshot);
 const decodeThread = Schema.decodeUnknownEffect(OrchestrationThread);
 const ProjectionProjectDbRowSchema = ProjectionProject.mapFields(
   Struct.assign({
@@ -86,6 +92,11 @@ const ProjectionThreadDbRowSchema = ProjectionThread.mapFields(
     modelSelection: Schema.fromJsonString(ModelSelection),
   }),
 );
+const ProjectionAgentDbRowSchema = OrchestrationAgent.mapFields(
+  Struct.assign({ modelSelection: Schema.fromJsonString(ModelSelection) }),
+);
+const ProjectionChannelDbRowSchema = OrchestrationChannel;
+const ProjectionChannelMessageDbRowSchema = OrchestrationChannelMessage;
 const ProjectionThreadActivityDbRowSchema = ProjectionThreadActivity.mapFields(
   Struct.assign({
     payload: Schema.fromJsonString(Schema.Unknown),
@@ -393,6 +404,75 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       `,
   });
 
+  const listAgentRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionAgentDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          agent_id AS id,
+          name,
+          role,
+          instructions,
+          model_selection_json AS "modelSelection",
+          runtime_mode AS "runtimeMode",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          deleted_at AS "deletedAt"
+        FROM projection_agents
+        ORDER BY created_at ASC, agent_id ASC
+      `,
+  });
+
+  const listChannelRows = SqlSchema.findAll({
+    Request: Schema.Void,
+    Result: ProjectionChannelDbRowSchema,
+    execute: () =>
+      sql`
+        SELECT
+          channel_id AS id,
+          project_id AS "projectId",
+          agent_id AS "agentId",
+          name,
+          technical_thread_id AS "threadId",
+          created_at AS "createdAt",
+          updated_at AS "updatedAt",
+          deleted_at AS "deletedAt"
+        FROM projection_channels
+        ORDER BY created_at ASC, channel_id ASC
+      `,
+  });
+
+  const listChannelMessageRows = SqlSchema.findAll({
+    Request: Schema.NullOr(ChannelId),
+    Result: ProjectionChannelMessageDbRowSchema,
+    execute: (channelId) =>
+      sql`
+        SELECT
+          pcm.message_id AS id,
+          pcm.channel_id AS "channelId",
+          pcm.technical_message_id AS "threadMessageId",
+          pcm.role,
+          COALESCE(ptm.text, '') AS text,
+          pcm.parent_message_id AS "parentMessageId",
+          pcm.root_message_id AS "rootMessageId",
+          pcm.sequence,
+          pcm.created_at AS "createdAt"
+        FROM projection_channel_messages pcm
+        LEFT JOIN projection_thread_messages ptm
+          ON ptm.message_id = pcm.technical_message_id
+        WHERE (${channelId} IS NULL OR pcm.channel_id = ${channelId})
+          AND pcm.message_id IN (
+            SELECT recent.message_id
+            FROM projection_channel_messages recent
+            WHERE recent.channel_id = pcm.channel_id
+            ORDER BY recent.sequence DESC, recent.message_id DESC
+            LIMIT 2000
+          )
+        ORDER BY pcm.channel_id ASC, pcm.sequence ASC, pcm.message_id ASC
+      `,
+  });
+
   const listThreadRows = SqlSchema.findAll({
     Request: Schema.Void,
     Result: ProjectionThreadDbRowSchema,
@@ -407,6 +487,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          surface,
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -459,6 +540,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         FROM projection_threads
         WHERE deleted_at IS NULL
           AND archived_at IS NULL
+          AND surface = 'thread'
           AND EXISTS (
             SELECT 1
             FROM projection_projects AS projects
@@ -502,6 +584,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         FROM projection_threads
         WHERE deleted_at IS NULL
           AND archived_at IS NOT NULL
+          AND surface = 'thread'
         ORDER BY project_id ASC, archived_at DESC, thread_id DESC
       `,
   });
@@ -539,6 +622,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE project_id = ${projectId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
+          AND surface = 'thread'
         ORDER BY created_at ASC, thread_id ASC
       `,
   });
@@ -901,6 +985,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             ON projects.project_id = threads.project_id
           WHERE threads.deleted_at IS NULL
             AND threads.archived_at IS NULL
+            AND threads.surface = 'thread'
             AND projects.deleted_at IS NULL
             AND projects.archived_at IS NULL
             AND messages.is_streaming = 0
@@ -991,6 +1076,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
         WHERE project_id = ${projectId}
           AND deleted_at IS NULL
           AND archived_at IS NULL
+          AND surface = 'thread'
         ORDER BY created_at ASC, thread_id ASC
         LIMIT 1
       `,
@@ -1029,6 +1115,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
           interaction_mode AS "interactionMode",
           branch,
           worktree_path AS "worktreePath",
+          surface,
           latest_turn_id AS "latestTurnId",
           created_at AS "createdAt",
           updated_at AS "updatedAt",
@@ -1244,6 +1331,30 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               ),
             ),
           ),
+          listAgentRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listAgents:query",
+                "ProjectionSnapshotQuery.getSnapshot:listAgents:decodeRows",
+              ),
+            ),
+          ),
+          listChannelRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listChannels:query",
+                "ProjectionSnapshotQuery.getSnapshot:listChannels:decodeRows",
+              ),
+            ),
+          ),
+          listChannelMessageRows(null).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getSnapshot:listChannelMessages:query",
+                "ProjectionSnapshotQuery.getSnapshot:listChannelMessages:decodeRows",
+              ),
+            ),
+          ),
           listThreadProposedPlanRows(undefined).pipe(
             Effect.mapError(
               toPersistenceSqlOrDecodeError(
@@ -1300,6 +1411,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
             projectRows,
             threadRows,
             messageRows,
+            agentRows,
+            channelRows,
+            channelMessageRows,
             proposedPlanRows,
             activityRows,
             sessionRows,
@@ -1323,6 +1437,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               for (const row of threadRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
+              for (const row of agentRows) updatedAt = maxIso(updatedAt, row.updatedAt);
+              for (const row of channelRows) updatedAt = maxIso(updatedAt, row.updatedAt);
               for (const row of stateRows) {
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
@@ -1489,6 +1605,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                agents: agentRows,
+                channels: channelRows,
+                channelMessages: channelMessageRows,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               };
 
@@ -1524,6 +1643,30 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
               toPersistenceSqlOrDecodeError(
                 "ProjectionSnapshotQuery.getCommandReadModel:listThreads:query",
                 "ProjectionSnapshotQuery.getCommandReadModel:listThreads:decodeRows",
+              ),
+            ),
+          ),
+          listAgentRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listAgents:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listAgents:decodeRows",
+              ),
+            ),
+          ),
+          listChannelRows(undefined).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listChannels:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listChannels:decodeRows",
+              ),
+            ),
+          ),
+          listChannelMessageRows(null).pipe(
+            Effect.mapError(
+              toPersistenceSqlOrDecodeError(
+                "ProjectionSnapshotQuery.getCommandReadModel:listChannelMessages:query",
+                "ProjectionSnapshotQuery.getCommandReadModel:listChannelMessages:decodeRows",
               ),
             ),
           ),
@@ -1563,7 +1706,17 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       )
       .pipe(
         Effect.flatMap(
-          ([projectRows, threadRows, proposedPlanRows, sessionRows, latestTurnRows, stateRows]) =>
+          ([
+            projectRows,
+            threadRows,
+            agentRows,
+            channelRows,
+            channelMessageRows,
+            proposedPlanRows,
+            sessionRows,
+            latestTurnRows,
+            stateRows,
+          ]) =>
             Effect.sync(() => {
               let updatedAt: string | null = null;
               const projects: OrchestrationProject[] = [];
@@ -1594,6 +1747,8 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 }
                 updatedAt = maxIso(updatedAt, row.updatedAt);
               }
+              for (const row of agentRows) updatedAt = maxIso(updatedAt, row.updatedAt);
+              for (const row of channelRows) updatedAt = maxIso(updatedAt, row.updatedAt);
               for (let index = 0; index < proposedPlanRows.length; index += 1) {
                 const row = proposedPlanRows[index];
                 if (!row) {
@@ -1694,6 +1849,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 snapshotSequence: computeSnapshotSequence(stateRows),
                 projects,
                 threads,
+                agents: agentRows,
+                channels: channelRows,
+                channelMessages: channelMessageRows,
                 updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
               } satisfies OrchestrationReadModel;
             }),
@@ -1905,6 +2063,48 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
                 ),
           ),
         );
+
+  const getChannelsSnapshot: ProjectionSnapshotQueryShape["getChannelsSnapshot"] = (channelId) =>
+    sql
+      .withTransaction(
+        Effect.all([
+          listProjectRows(undefined),
+          listAgentRows(undefined),
+          listChannelRows(undefined),
+          channelId === undefined ? Effect.succeed([]) : listChannelMessageRows(channelId),
+          listProjectionStateRows(undefined),
+        ]),
+      )
+      .pipe(
+        Effect.flatMap(([projectRows, agentRows, channelRows, messageRows, stateRows]) => {
+          const activeProjectIds = new Set(
+            projectRows
+              .filter((project) => project.deletedAt === null && project.archivedAt === null)
+              .map((project) => project.projectId),
+          );
+          const channels = channelRows.filter(
+            (channel) => channel.deletedAt === null && activeProjectIds.has(channel.projectId),
+          );
+          const channelIds = new Set(channels.map((channel) => channel.id));
+          const agents = agentRows.filter((agent) => agent.deletedAt === null);
+          const updatedAt = [...agents, ...channels, ...stateRows].reduce<string | null>(
+            (latest, row) => maxIso(latest, row.updatedAt),
+            null,
+          );
+          return decodeChannelsSnapshot({
+            snapshotSequence: computeSnapshotSequence(stateRows),
+            agents,
+            channels,
+            messages: messageRows.filter((message) => channelIds.has(message.channelId)),
+            updatedAt: updatedAt ?? "1970-01-01T00:00:00.000Z",
+          });
+        }),
+        Effect.mapError((error) =>
+          isPersistenceError(error)
+            ? error
+            : toPersistenceSqlError("ProjectionSnapshotQuery.getChannelsSnapshot:query")(error),
+        ),
+      );
 
   const getArchivedShellSnapshot: ProjectionSnapshotQueryShape["getArchivedShellSnapshot"] = () =>
     sql
@@ -2364,6 +2564,9 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
       if (Option.isNone(threadRow)) {
         return Option.none<OrchestrationThreadShell>();
       }
+      if (threadRow.value.surface === "channel") {
+        return Option.none<OrchestrationThreadShell>();
+      }
 
       return Option.some({
         id: threadRow.value.threadId,
@@ -2570,6 +2773,7 @@ const makeProjectionSnapshotQuery = Effect.gen(function* () {
     getShellSnapshot,
     getArchivedShellSnapshot,
     getArchivedProjectsSnapshot,
+    getChannelsSnapshot,
     searchThreads,
     getSnapshotSequence,
     getCounts,

@@ -24,7 +24,10 @@ import { Route as SettingsBetaRouteImport } from './routes/settings.beta'
 import { Route as SettingsArchivedRouteImport } from './routes/settings.archived'
 import { Route as SettingsAppearanceRouteImport } from './routes/settings.appearance'
 import { Route as ConnectCallbackRouteImport } from './routes/connect_.callback'
+import { Route as ChatChannelsRouteImport } from './routes/_chat.channels'
+import { Route as ChatChannelsIndexRouteImport } from './routes/_chat.channels.index'
 import { Route as ChatDraftDraftIdRouteImport } from './routes/_chat.draft.$draftId'
+import { Route as ChatChannelsChannelIdRouteImport } from './routes/_chat.channels.$channelId'
 import { Route as ChatEnvironmentIdThreadIdRouteImport } from './routes/_chat.$environmentId.$threadId'
 
 const SettingsRoute = SettingsRouteImport.update({
@@ -101,10 +104,25 @@ const ConnectCallbackRoute = ConnectCallbackRouteImport.update({
   path: '/connect/callback',
   getParentRoute: () => rootRouteImport,
 } as any)
+const ChatChannelsRoute = ChatChannelsRouteImport.update({
+  id: '/channels',
+  path: '/channels',
+  getParentRoute: () => ChatRoute,
+} as any)
+const ChatChannelsIndexRoute = ChatChannelsIndexRouteImport.update({
+  id: '/',
+  path: '/',
+  getParentRoute: () => ChatChannelsRoute,
+} as any)
 const ChatDraftDraftIdRoute = ChatDraftDraftIdRouteImport.update({
   id: '/draft/$draftId',
   path: '/draft/$draftId',
   getParentRoute: () => ChatRoute,
+} as any)
+const ChatChannelsChannelIdRoute = ChatChannelsChannelIdRouteImport.update({
+  id: '/$channelId',
+  path: '/$channelId',
+  getParentRoute: () => ChatChannelsRoute,
 } as any)
 const ChatEnvironmentIdThreadIdRoute =
   ChatEnvironmentIdThreadIdRouteImport.update({
@@ -118,6 +136,7 @@ export interface FileRoutesByFullPath {
   '/connect': typeof ConnectRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/channels': typeof ChatChannelsRouteWithChildren
   '/connect/callback': typeof ConnectCallbackRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -129,7 +148,9 @@ export interface FileRoutesByFullPath {
   '/settings/providers': typeof SettingsProvidersRoute
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/channels/$channelId': typeof ChatChannelsChannelIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/channels/': typeof ChatChannelsIndexRoute
 }
 export interface FileRoutesByTo {
   '/connect': typeof ConnectRoute
@@ -147,7 +168,9 @@ export interface FileRoutesByTo {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/': typeof ChatIndexRoute
   '/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/channels/$channelId': typeof ChatChannelsChannelIdRoute
   '/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/channels': typeof ChatChannelsIndexRoute
 }
 export interface FileRoutesById {
   __root__: typeof rootRouteImport
@@ -155,6 +178,7 @@ export interface FileRoutesById {
   '/connect': typeof ConnectRoute
   '/pair': typeof PairRoute
   '/settings': typeof SettingsRouteWithChildren
+  '/_chat/channels': typeof ChatChannelsRouteWithChildren
   '/connect_/callback': typeof ConnectCallbackRoute
   '/settings/appearance': typeof SettingsAppearanceRoute
   '/settings/archived': typeof SettingsArchivedRoute
@@ -167,7 +191,9 @@ export interface FileRoutesById {
   '/settings/source-control': typeof SettingsSourceControlRoute
   '/_chat/': typeof ChatIndexRoute
   '/_chat/$environmentId/$threadId': typeof ChatEnvironmentIdThreadIdRoute
+  '/_chat/channels/$channelId': typeof ChatChannelsChannelIdRoute
   '/_chat/draft/$draftId': typeof ChatDraftDraftIdRoute
+  '/_chat/channels/': typeof ChatChannelsIndexRoute
 }
 export interface FileRouteTypes {
   fileRoutesByFullPath: FileRoutesByFullPath
@@ -176,6 +202,7 @@ export interface FileRouteTypes {
     | '/connect'
     | '/pair'
     | '/settings'
+    | '/channels'
     | '/connect/callback'
     | '/settings/appearance'
     | '/settings/archived'
@@ -187,7 +214,9 @@ export interface FileRouteTypes {
     | '/settings/providers'
     | '/settings/source-control'
     | '/$environmentId/$threadId'
+    | '/channels/$channelId'
     | '/draft/$draftId'
+    | '/channels/'
   fileRoutesByTo: FileRoutesByTo
   to:
     | '/connect'
@@ -205,13 +234,16 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/'
     | '/$environmentId/$threadId'
+    | '/channels/$channelId'
     | '/draft/$draftId'
+    | '/channels'
   id:
     | '__root__'
     | '/_chat'
     | '/connect'
     | '/pair'
     | '/settings'
+    | '/_chat/channels'
     | '/connect_/callback'
     | '/settings/appearance'
     | '/settings/archived'
@@ -224,7 +256,9 @@ export interface FileRouteTypes {
     | '/settings/source-control'
     | '/_chat/'
     | '/_chat/$environmentId/$threadId'
+    | '/_chat/channels/$channelId'
     | '/_chat/draft/$draftId'
+    | '/_chat/channels/'
   fileRoutesById: FileRoutesById
 }
 export interface RootRouteChildren {
@@ -342,12 +376,33 @@ declare module '@tanstack/react-router' {
       preLoaderRoute: typeof ConnectCallbackRouteImport
       parentRoute: typeof rootRouteImport
     }
+    '/_chat/channels': {
+      id: '/_chat/channels'
+      path: '/channels'
+      fullPath: '/channels'
+      preLoaderRoute: typeof ChatChannelsRouteImport
+      parentRoute: typeof ChatRoute
+    }
+    '/_chat/channels/': {
+      id: '/_chat/channels/'
+      path: '/'
+      fullPath: '/channels/'
+      preLoaderRoute: typeof ChatChannelsIndexRouteImport
+      parentRoute: typeof ChatChannelsRoute
+    }
     '/_chat/draft/$draftId': {
       id: '/_chat/draft/$draftId'
       path: '/draft/$draftId'
       fullPath: '/draft/$draftId'
       preLoaderRoute: typeof ChatDraftDraftIdRouteImport
       parentRoute: typeof ChatRoute
+    }
+    '/_chat/channels/$channelId': {
+      id: '/_chat/channels/$channelId'
+      path: '/$channelId'
+      fullPath: '/channels/$channelId'
+      preLoaderRoute: typeof ChatChannelsChannelIdRouteImport
+      parentRoute: typeof ChatChannelsRoute
     }
     '/_chat/$environmentId/$threadId': {
       id: '/_chat/$environmentId/$threadId'
@@ -359,13 +414,29 @@ declare module '@tanstack/react-router' {
   }
 }
 
+interface ChatChannelsRouteChildren {
+  ChatChannelsChannelIdRoute: typeof ChatChannelsChannelIdRoute
+  ChatChannelsIndexRoute: typeof ChatChannelsIndexRoute
+}
+
+const ChatChannelsRouteChildren: ChatChannelsRouteChildren = {
+  ChatChannelsChannelIdRoute: ChatChannelsChannelIdRoute,
+  ChatChannelsIndexRoute: ChatChannelsIndexRoute,
+}
+
+const ChatChannelsRouteWithChildren = ChatChannelsRoute._addFileChildren(
+  ChatChannelsRouteChildren,
+)
+
 interface ChatRouteChildren {
+  ChatChannelsRoute: typeof ChatChannelsRouteWithChildren
   ChatIndexRoute: typeof ChatIndexRoute
   ChatEnvironmentIdThreadIdRoute: typeof ChatEnvironmentIdThreadIdRoute
   ChatDraftDraftIdRoute: typeof ChatDraftDraftIdRoute
 }
 
 const ChatRouteChildren: ChatRouteChildren = {
+  ChatChannelsRoute: ChatChannelsRouteWithChildren,
   ChatIndexRoute: ChatIndexRoute,
   ChatEnvironmentIdThreadIdRoute: ChatEnvironmentIdThreadIdRoute,
   ChatDraftDraftIdRoute: ChatDraftDraftIdRoute,

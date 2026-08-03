@@ -746,6 +746,15 @@ export const WsOrchestrationGetArchivedProjectsSnapshotRpc = Rpc.make(
   },
 );
 
+export const WsOrchestrationGetChannelsSnapshotRpc = Rpc.make(
+  ORCHESTRATION_WS_METHODS.getChannelsSnapshot,
+  {
+    payload: OrchestrationRpcSchemas.getChannelsSnapshot.input,
+    success: OrchestrationRpcSchemas.getChannelsSnapshot.output,
+    error: Schema.Union([OrchestrationGetSnapshotError, EnvironmentAuthorizationError]),
+  },
+);
+
 export const WsOrchestrationSubscribeShellRpc = Rpc.make(ORCHESTRATION_WS_METHODS.subscribeShell, {
   payload: OrchestrationRpcSchemas.subscribeShell.input,
   success: OrchestrationRpcSchemas.subscribeShell.output,
@@ -893,6 +902,7 @@ export const WsRpcGroup = RpcGroup.make(
   WsOrchestrationSearchThreadsRpc,
   WsOrchestrationGetArchivedShellSnapshotRpc,
   WsOrchestrationGetArchivedProjectsSnapshotRpc,
+  WsOrchestrationGetChannelsSnapshotRpc,
   WsOrchestrationSubscribeShellRpc,
   WsOrchestrationSubscribeThreadRpc,
 );

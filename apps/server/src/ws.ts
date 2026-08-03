@@ -1305,6 +1305,29 @@ const makeWsRpcLayer = (
             ),
             { "rpc.aggregate": "orchestration" },
           ),
+        [ORCHESTRATION_WS_METHODS.getChannelsSnapshot]: (input) =>
+          observeRpcEffect(
+            ORCHESTRATION_WS_METHODS.getChannelsSnapshot,
+            (
+              projectionSnapshotQuery.getChannelsSnapshot?.(input.channelId) ??
+              Effect.succeed({
+                snapshotSequence: 0,
+                agents: [],
+                channels: [],
+                messages: [],
+                updatedAt: "1970-01-01T00:00:00.000Z",
+              })
+            ).pipe(
+              Effect.mapError(
+                (cause) =>
+                  new OrchestrationGetSnapshotError({
+                    message: "Failed to load Channels snapshot",
+                    cause,
+                  }),
+              ),
+            ),
+            { "rpc.aggregate": "orchestration" },
+          ),
         [ORCHESTRATION_WS_METHODS.subscribeThread]: (input) =>
           observeRpcStreamEffect(
             ORCHESTRATION_WS_METHODS.subscribeThread,

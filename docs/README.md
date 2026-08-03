@@ -5,12 +5,13 @@
 - [Install and first run](./user/install.md)
 - [Permission modes](./user/permission-modes.md)
 - [Hide and restore projects](./user/archive.md)
+- [Channels and reusable agents](./user/channels.md)
 - [Keyboard shortcuts](./user/keybindings.md)
 - [Remote access](./user/remote-access.md)
 - [Keeping app and server in sync](./user/updating.md)
 - [Source control integrations](./user/source-control.md)
 - [Background service (Linux)](./user/background-service.md)
-- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md)
+- Providers: [Codex](./user/providers-codex.md) · [Claude](./user/providers-claude.md) · [Ocean and Pi](./user/ocean-pi.md)
 
 Mobile app: [apps/mobile/README.md](../apps/mobile/README.md)
 

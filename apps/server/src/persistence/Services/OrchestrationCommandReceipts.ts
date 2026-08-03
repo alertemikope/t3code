@@ -7,6 +7,8 @@
  * @module OrchestrationCommandReceiptRepository
  */
 import {
+  AgentId,
+  ChannelId,
   CommandId,
   IsoDateTime,
   NonNegativeInt,
@@ -25,7 +27,7 @@ import type { OrchestrationCommandReceiptRepositoryError } from "../Errors.ts";
 export const OrchestrationCommandReceipt = Schema.Struct({
   commandId: CommandId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, AgentId, ChannelId]),
   acceptedAt: IsoDateTime,
   resultSequence: NonNegativeInt,
   status: OrchestrationCommandReceiptStatus,

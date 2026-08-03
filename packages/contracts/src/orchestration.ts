@@ -7,7 +7,9 @@ import * as Struct from "effect/Struct";
 import { ProviderOptionSelections } from "./model.ts";
 import { RepositoryIdentity } from "./environment.ts";
 import {
+  AgentId,
   ApprovalRequestId,
+  ChannelId,
   CheckpointRef,
   CommandId,
   EventId,
@@ -30,6 +32,7 @@ export const ORCHESTRATION_WS_METHODS = {
   searchThreads: "orchestration.searchThreads",
   getArchivedShellSnapshot: "orchestration.getArchivedShellSnapshot",
   getArchivedProjectsSnapshot: "orchestration.getArchivedProjectsSnapshot",
+  getChannelsSnapshot: "orchestration.getChannelsSnapshot",
   subscribeShell: "orchestration.subscribeShell",
   subscribeThread: "orchestration.subscribeThread",
 } as const;
@@ -225,6 +228,56 @@ export const OrchestrationProject = Schema.Struct({
 });
 export type OrchestrationProject = typeof OrchestrationProject.Type;
 
+export const ThreadSurface = Schema.Literals(["thread", "channel"]);
+export type ThreadSurface = typeof ThreadSurface.Type;
+
+export const OrchestrationAgent = Schema.Struct({
+  id: AgentId,
+  name: TrimmedNonEmptyString,
+  role: TrimmedNonEmptyString,
+  instructions: TrimmedString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationAgent = typeof OrchestrationAgent.Type;
+
+export const OrchestrationChannel = Schema.Struct({
+  id: ChannelId,
+  projectId: ProjectId,
+  agentId: AgentId,
+  name: TrimmedNonEmptyString,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+  deletedAt: Schema.NullOr(IsoDateTime),
+});
+export type OrchestrationChannel = typeof OrchestrationChannel.Type;
+
+export const OrchestrationChannelMessage = Schema.Struct({
+  id: MessageId,
+  channelId: ChannelId,
+  threadMessageId: MessageId,
+  role: Schema.Literals(["user", "assistant", "system"]),
+  text: Schema.String,
+  parentMessageId: Schema.NullOr(MessageId),
+  rootMessageId: MessageId,
+  sequence: NonNegativeInt,
+  createdAt: IsoDateTime,
+});
+export type OrchestrationChannelMessage = typeof OrchestrationChannelMessage.Type;
+
+export const OrchestrationChannelsSnapshot = Schema.Struct({
+  snapshotSequence: NonNegativeInt,
+  agents: Schema.Array(OrchestrationAgent),
+  channels: Schema.Array(OrchestrationChannel),
+  messages: Schema.Array(OrchestrationChannelMessage),
+  updatedAt: IsoDateTime,
+});
+export type OrchestrationChannelsSnapshot = typeof OrchestrationChannelsSnapshot.Type;
+
 export const OrchestrationMessageRole = Schema.Literals(["user", "assistant", "system"]);
 export type OrchestrationMessageRole = typeof OrchestrationMessageRole.Type;
 
@@ -362,6 +415,7 @@ export const OrchestrationThread = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  surface: Schema.optional(ThreadSurface),
   latestTurn: Schema.NullOr(OrchestrationLatestTurn),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
@@ -393,6 +447,9 @@ export const OrchestrationReadModel = Schema.Struct({
   snapshotSequence: NonNegativeInt,
   projects: Schema.Array(OrchestrationProject),
   threads: Schema.Array(OrchestrationThread),
+  agents: Schema.optional(Schema.Array(OrchestrationAgent)),
+  channels: Schema.optional(Schema.Array(OrchestrationChannel)),
+  channelMessages: Schema.optional(Schema.Array(OrchestrationChannelMessage)),
   updatedAt: IsoDateTime,
 });
 export type OrchestrationReadModel = typeof OrchestrationReadModel.Type;
@@ -581,6 +638,87 @@ const ProjectUnarchiveCommand = Schema.Struct({
   projectId: ProjectId,
 });
 
+const AgentCreateCommand = Schema.Struct({
+  type: Schema.Literal("agent.create"),
+  commandId: CommandId,
+  agentId: AgentId,
+  name: TrimmedNonEmptyString,
+  role: TrimmedNonEmptyString,
+  instructions: TrimmedString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  createdAt: IsoDateTime,
+});
+
+const AgentUpdateCommand = Schema.Struct({
+  type: Schema.Literal("agent.update"),
+  commandId: CommandId,
+  agentId: AgentId,
+  name: Schema.optional(TrimmedNonEmptyString),
+  role: Schema.optional(TrimmedNonEmptyString),
+  instructions: Schema.optional(TrimmedString),
+  modelSelection: Schema.optional(ModelSelection),
+  runtimeMode: Schema.optional(RuntimeMode),
+});
+
+const AgentDeleteCommand = Schema.Struct({
+  type: Schema.Literal("agent.delete"),
+  commandId: CommandId,
+  agentId: AgentId,
+});
+
+const ChannelCreateCommand = Schema.Struct({
+  type: Schema.Literal("channel.create"),
+  commandId: CommandId,
+  channelId: ChannelId,
+  projectId: ProjectId,
+  threadId: ThreadId,
+  agentId: AgentId,
+  name: TrimmedNonEmptyString,
+  createdAt: IsoDateTime,
+});
+
+const ChannelUpdateCommand = Schema.Struct({
+  type: Schema.Literal("channel.update"),
+  commandId: CommandId,
+  channelId: ChannelId,
+  name: TrimmedNonEmptyString,
+});
+
+const ChannelDeleteCommand = Schema.Struct({
+  type: Schema.Literal("channel.delete"),
+  commandId: CommandId,
+  channelId: ChannelId,
+});
+
+const ChannelMessageSendCommand = Schema.Struct({
+  type: Schema.Literal("channel.message.send"),
+  commandId: CommandId,
+  channelId: ChannelId,
+  message: Schema.Struct({
+    messageId: MessageId,
+    role: Schema.Literal("user"),
+    text: Schema.String,
+    attachments: Schema.Array(ChatAttachment),
+    parentMessageId: Schema.optional(MessageId),
+  }),
+  createdAt: IsoDateTime,
+});
+
+const ClientChannelMessageSendCommand = Schema.Struct({
+  type: Schema.Literal("channel.message.send"),
+  commandId: CommandId,
+  channelId: ChannelId,
+  message: Schema.Struct({
+    messageId: MessageId,
+    role: Schema.Literal("user"),
+    text: Schema.String,
+    attachments: Schema.Array(UploadChatAttachment),
+    parentMessageId: Schema.optional(MessageId),
+  }),
+  createdAt: IsoDateTime,
+});
+
 const ThreadCreateCommand = Schema.Struct({
   type: Schema.Literal("thread.create"),
   commandId: CommandId,
@@ -594,6 +732,7 @@ const ThreadCreateCommand = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  surface: Schema.optional(ThreadSurface),
   createdAt: IsoDateTime,
 });
 
@@ -799,6 +938,13 @@ const DispatchableClientOrchestrationCommand = Schema.Union([
   ProjectDeleteCommand,
   ProjectArchiveCommand,
   ProjectUnarchiveCommand,
+  AgentCreateCommand,
+  AgentUpdateCommand,
+  AgentDeleteCommand,
+  ChannelCreateCommand,
+  ChannelUpdateCommand,
+  ChannelDeleteCommand,
+  ChannelMessageSendCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -826,6 +972,13 @@ export const ClientOrchestrationCommand = Schema.Union([
   ProjectDeleteCommand,
   ProjectArchiveCommand,
   ProjectUnarchiveCommand,
+  AgentCreateCommand,
+  AgentUpdateCommand,
+  AgentDeleteCommand,
+  ChannelCreateCommand,
+  ChannelUpdateCommand,
+  ChannelDeleteCommand,
+  ClientChannelMessageSendCommand,
   ThreadCreateCommand,
   ThreadDeleteCommand,
   ThreadArchiveCommand,
@@ -964,6 +1117,12 @@ export const OrchestrationEventType = Schema.Literals([
   "project.deleted",
   "project.archived",
   "project.unarchived",
+  "agent.created",
+  "agent.updated",
+  "agent.deleted",
+  "channel.created",
+  "channel.updated",
+  "channel.deleted",
   "thread.created",
   "thread.deleted",
   "thread.archived",
@@ -990,7 +1149,12 @@ export const OrchestrationEventType = Schema.Literals([
 ]);
 export type OrchestrationEventType = typeof OrchestrationEventType.Type;
 
-export const OrchestrationAggregateKind = Schema.Literals(["project", "thread"]);
+export const OrchestrationAggregateKind = Schema.Literals([
+  "project",
+  "thread",
+  "agent",
+  "channel",
+]);
 export type OrchestrationAggregateKind = typeof OrchestrationAggregateKind.Type;
 export const OrchestrationActorKind = Schema.Literals(["client", "server", "provider"]);
 
@@ -1031,6 +1195,53 @@ export const ProjectUnarchivedPayload = Schema.Struct({
   updatedAt: IsoDateTime,
 });
 
+export const AgentCreatedPayload = Schema.Struct({
+  agentId: AgentId,
+  name: TrimmedNonEmptyString,
+  role: TrimmedNonEmptyString,
+  instructions: TrimmedString,
+  modelSelection: ModelSelection,
+  runtimeMode: RuntimeMode,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const AgentUpdatedPayload = Schema.Struct({
+  agentId: AgentId,
+  name: Schema.optional(TrimmedNonEmptyString),
+  role: Schema.optional(TrimmedNonEmptyString),
+  instructions: Schema.optional(TrimmedString),
+  modelSelection: Schema.optional(ModelSelection),
+  runtimeMode: Schema.optional(RuntimeMode),
+  updatedAt: IsoDateTime,
+});
+
+export const AgentDeletedPayload = Schema.Struct({
+  agentId: AgentId,
+  deletedAt: IsoDateTime,
+});
+
+export const ChannelCreatedPayload = Schema.Struct({
+  channelId: ChannelId,
+  projectId: ProjectId,
+  agentId: AgentId,
+  name: TrimmedNonEmptyString,
+  threadId: ThreadId,
+  createdAt: IsoDateTime,
+  updatedAt: IsoDateTime,
+});
+
+export const ChannelUpdatedPayload = Schema.Struct({
+  channelId: ChannelId,
+  name: TrimmedNonEmptyString,
+  updatedAt: IsoDateTime,
+});
+
+export const ChannelDeletedPayload = Schema.Struct({
+  channelId: ChannelId,
+  deletedAt: IsoDateTime,
+});
+
 export const ThreadCreatedPayload = Schema.Struct({
   threadId: ThreadId,
   projectId: ProjectId,
@@ -1042,6 +1253,7 @@ export const ThreadCreatedPayload = Schema.Struct({
   ),
   branch: Schema.NullOr(TrimmedNonEmptyString),
   worktreePath: Schema.NullOr(TrimmedNonEmptyString),
+  surface: Schema.optional(ThreadSurface),
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
 });
@@ -1131,6 +1343,13 @@ export const ThreadMessageSentPayload = Schema.Struct({
   streaming: Schema.Boolean,
   createdAt: IsoDateTime,
   updatedAt: IsoDateTime,
+  channel: Schema.optional(
+    Schema.Struct({
+      channelId: ChannelId,
+      parentMessageId: Schema.NullOr(MessageId),
+      rootMessageId: MessageId,
+    }),
+  ),
 });
 
 export const ThreadTurnStartRequestedPayload = Schema.Struct({
@@ -1142,6 +1361,7 @@ export const ThreadTurnStartRequestedPayload = Schema.Struct({
   interactionMode: ProviderInteractionMode.pipe(
     Schema.withDecodingDefault(Effect.succeed(DEFAULT_PROVIDER_INTERACTION_MODE)),
   ),
+  instructions: Schema.optional(TrimmedString),
   sourceProposedPlan: Schema.optional(SourceProposedPlanReference),
   createdAt: IsoDateTime,
 });
@@ -1221,7 +1441,7 @@ const EventBaseFields = {
   sequence: NonNegativeInt,
   eventId: EventId,
   aggregateKind: OrchestrationAggregateKind,
-  aggregateId: Schema.Union([ProjectId, ThreadId]),
+  aggregateId: Schema.Union([ProjectId, ThreadId, AgentId, ChannelId]),
   occurredAt: IsoDateTime,
   commandId: Schema.NullOr(CommandId),
   causationEventId: Schema.NullOr(EventId),
@@ -1254,6 +1474,36 @@ export const OrchestrationEvent = Schema.Union([
     ...EventBaseFields,
     type: Schema.Literal("project.unarchived"),
     payload: ProjectUnarchivedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("agent.created"),
+    payload: AgentCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("agent.updated"),
+    payload: AgentUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("agent.deleted"),
+    payload: AgentDeletedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("channel.created"),
+    payload: ChannelCreatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("channel.updated"),
+    payload: ChannelUpdatedPayload,
+  }),
+  Schema.Struct({
+    ...EventBaseFields,
+    type: Schema.Literal("channel.deleted"),
+    payload: ChannelDeletedPayload,
   }),
   Schema.Struct({
     ...EventBaseFields,
@@ -1523,6 +1773,10 @@ export const OrchestrationRpcSchemas = {
   getArchivedProjectsSnapshot: {
     input: Schema.Struct({}),
     output: OrchestrationArchivedProjectsSnapshot,
+  },
+  getChannelsSnapshot: {
+    input: Schema.Struct({ channelId: Schema.optional(ChannelId) }),
+    output: OrchestrationChannelsSnapshot,
   },
   subscribeThread: {
     input: OrchestrationSubscribeThreadInput,
