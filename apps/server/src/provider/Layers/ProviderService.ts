@@ -204,15 +204,18 @@ function resumeCursorSessionId(resumeCursor: unknown | null | undefined): string
   return trimmed.length > 0 ? trimmed : undefined;
 }
 
-function oceanNativeSessionId(
+function restorableNativeSessionId(
   binding: ProviderSessionDirectory.ProviderRuntimeBinding,
 ): string | undefined {
-  if (binding.provider !== "ocean") {
-    return undefined;
+  if (binding.provider === "ocean") {
+    return (
+      importedNativeSessionId(binding.runtimePayload) ?? resumeCursorSessionId(binding.resumeCursor)
+    );
   }
-  return (
-    importedNativeSessionId(binding.runtimePayload) ?? resumeCursorSessionId(binding.resumeCursor)
-  );
+  if (binding.provider === "piAgent") {
+    return importedNativeSessionId(binding.runtimePayload);
+  }
+  return undefined;
 }
 
 const dieOnMissingBindingInstanceId = (
@@ -449,8 +452,8 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
 
       const persistedCwd = readPersistedCwd(input.binding.runtimePayload);
       const persistedModelSelection = readPersistedModelSelection(input.binding.runtimePayload);
-      const shouldRefreshImportedOceanHistory =
-        input.binding.provider === "ocean" &&
+      const shouldRefreshImportedNativeHistory =
+        (input.binding.provider === "ocean" || input.binding.provider === "piAgent") &&
         importedNativeSessionId(input.binding.runtimePayload) !== undefined;
 
       yield* prepareMcpSession(input.binding.threadId, bindingInstanceId);
@@ -462,7 +465,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
           ...(persistedCwd ? { cwd: persistedCwd } : {}),
           ...(persistedModelSelection ? { modelSelection: persistedModelSelection } : {}),
           ...(hasResumeCursor ? { resumeCursor: input.binding.resumeCursor } : {}),
-          ...(shouldRefreshImportedOceanHistory ? { importHistory: true } : {}),
+          ...(shouldRefreshImportedNativeHistory ? { importHistory: true } : {}),
           runtimeMode: input.binding.runtimeMode ?? "full-access",
         })
         .pipe(Effect.onError(() => clearMcpSession(input.binding.threadId)));
@@ -1198,11 +1201,11 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     );
   });
 
-  const restoreImportedOceanSessions = Effect.gen(function* () {
+  const restoreImportedNativeSessions = Effect.gen(function* () {
     const bindings = yield* directory.listBindings();
-    const restoredNativeSessionIds = new Set<string>();
-    const importedOceanBindings = bindings
-      .filter((binding) => oceanNativeSessionId(binding) !== undefined)
+    const restoredNativeSessionKeys = new Set<string>();
+    const importedNativeBindings = bindings
+      .filter((binding) => restorableNativeSessionId(binding) !== undefined)
       .toSorted((left, right) => {
         const leftIsImported = importedNativeSessionId(left.runtimePayload) !== undefined;
         const rightIsImported = importedNativeSessionId(right.runtimePayload) !== undefined;
@@ -1214,24 +1217,27 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
         );
       });
 
-    for (const binding of importedOceanBindings) {
-      const nativeSessionId = oceanNativeSessionId(binding);
-      if (!nativeSessionId || restoredNativeSessionIds.has(nativeSessionId)) {
+    for (const binding of importedNativeBindings) {
+      const nativeSessionId = restorableNativeSessionId(binding);
+      const nativeSessionKey = `${binding.providerInstanceId ?? binding.provider}:${nativeSessionId ?? ""}`;
+      if (!nativeSessionId || restoredNativeSessionKeys.has(nativeSessionKey)) {
         continue;
       }
-      restoredNativeSessionIds.add(nativeSessionId);
+      restoredNativeSessionKeys.add(nativeSessionKey);
       yield* recoverSessionForThread({
         binding,
-        operation: "ProviderService.restoreImportedOceanSessions",
+        operation: "ProviderService.restoreImportedNativeSessions",
       }).pipe(
         Effect.tap(() =>
-          Effect.logInfo("provider.ocean_session.restored", {
+          Effect.logInfo("provider.native_session.restored", {
+            provider: binding.provider,
             threadId: binding.threadId,
             nativeSessionId,
           }),
         ),
         Effect.catchCause((cause) =>
-          Effect.logWarning("provider.ocean_session.restore_failed", {
+          Effect.logWarning("provider.native_session.restore_failed", {
+            provider: binding.provider,
             threadId: binding.threadId,
             nativeSessionId,
             cause,
@@ -1241,7 +1247,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     }
   }).pipe(
     Effect.catchCause((cause) =>
-      Effect.logWarning("provider.ocean_sessions.restore_failed", {
+      Effect.logWarning("provider.native_sessions.restore_failed", {
         cause,
       }),
     ),
@@ -1317,7 +1323,7 @@ const makeProviderService = Effect.fn("makeProviderService")(function* (
     listSessions,
     listNativeSessions,
     bindNativeSession,
-    restoreImportedSessions: () => restoreImportedOceanSessions,
+    restoreImportedSessions: () => restoreImportedNativeSessions,
     getCapabilities,
     getInstanceInfo,
     rollbackConversation,

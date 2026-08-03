@@ -69,10 +69,12 @@ const asTurnId = (value: string): TurnId => TurnId.make(value);
 const codexInstanceId = ProviderInstanceId.make("codex");
 const claudeAgentInstanceId = ProviderInstanceId.make("claudeAgent");
 const oceanInstanceId = ProviderInstanceId.make("ocean");
+const piAgentInstanceId = ProviderInstanceId.make("piAgent");
 const CODEX_DRIVER = ProviderDriverKind.make("codex");
 const CLAUDE_AGENT_DRIVER = ProviderDriverKind.make("claudeAgent");
 const CURSOR_DRIVER = ProviderDriverKind.make("cursor");
 const OCEAN_DRIVER = ProviderDriverKind.make("ocean");
+const PI_AGENT_DRIVER = ProviderDriverKind.make("piAgent");
 
 type LegacyProviderRuntimeEvent = {
   readonly type: string;
@@ -730,15 +732,17 @@ it.effect("ProviderServiceLive keeps persisted resumable sessions on startup", (
   }).pipe(Effect.provide(NodeServices.layer)),
 );
 
-it.effect("ProviderServiceLive restores one listener per Ocean session on startup", () =>
+it.effect("ProviderServiceLive restores imported Ocean and Pi sessions on startup", () =>
   Effect.gen(function* () {
     const tempDir = NodeFS.mkdtempSync(
       NodePath.join(NodeOS.tmpdir(), "t3-provider-ocean-restore-"),
     );
     const dbPath = NodePath.join(tempDir, "orchestration.sqlite");
     const ocean = makeFakeCodexAdapter(OCEAN_DRIVER);
+    const piAgent = makeFakeCodexAdapter(PI_AGENT_DRIVER);
     const registry = makeAdapterRegistryMock({
       [OCEAN_DRIVER]: ocean.adapter,
+      [PI_AGENT_DRIVER]: piAgent.adapter,
     });
     const persistenceLayer = makeSqlitePersistenceLive(dbPath);
     const runtimeRepositoryLayer = ProviderSessionRuntime.layer.pipe(
@@ -782,6 +786,22 @@ it.effect("ProviderServiceLive restores one listener per Ocean session on startu
         runtimeMode: "full-access",
         runtimePayload: {
           cwd: "/tmp/ocean-direct",
+        },
+      });
+      yield* directory.upsert({
+        provider: PI_AGENT_DRIVER,
+        providerInstanceId: piAgentInstanceId,
+        threadId: asThreadId("thread-pi-imported"),
+        status: "stopped",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: "pi-native-imported",
+        },
+        runtimeMode: "full-access",
+        runtimePayload: {
+          cwd: "/tmp/pi-imported",
+          importedNativeSessionId: "pi-native-imported",
+          importedAt: "2026-01-04T00:00:00.000Z",
         },
       });
     }).pipe(Effect.provide(directoryLayer));
@@ -831,6 +851,19 @@ it.effect("ProviderServiceLive restores one listener per Ocean session on startu
       });
       assert.equal(callsByThreadId.has(asThreadId("thread-ocean-duplicate")), false);
       assert.equal(callsByThreadId.has(asThreadId("thread-ocean-imported-shadow")), false);
+      assert.equal(piAgent.startSession.mock.calls.length, 1);
+      assert.deepEqual(piAgent.startSession.mock.calls[0]?.[0], {
+        threadId: asThreadId("thread-pi-imported"),
+        provider: PI_AGENT_DRIVER,
+        providerInstanceId: piAgentInstanceId,
+        cwd: "/tmp/pi-imported",
+        resumeCursor: {
+          schemaVersion: 1,
+          sessionId: "pi-native-imported",
+        },
+        importHistory: true,
+        runtimeMode: "full-access",
+      });
     }).pipe(Effect.provide(providerLayer), Effect.scoped);
 
     NodeFS.rmSync(tempDir, { recursive: true, force: true });
