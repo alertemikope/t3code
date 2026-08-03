@@ -8,6 +8,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
 } from "@t3tools/contracts";
 import { assert, it } from "@effect/vitest";
 import * as Effect from "effect/Effect";
@@ -42,6 +43,9 @@ layer("channel SQL projections", (it) => {
       const threadId = ThreadId.make("channel-pipeline-thread");
       const channelId = ChannelId.make("channel-pipeline-channel");
       const messageId = MessageId.make("channel-pipeline-message");
+      const replyMessageId = MessageId.make("channel-pipeline-reply");
+      const assistantMessageId = MessageId.make("channel-pipeline-assistant");
+      const assistantFollowupId = MessageId.make("channel-pipeline-assistant-followup");
 
       yield* events.append({
         type: "project.created",
@@ -156,6 +160,51 @@ layer("channel SQL projections", (it) => {
           channel: { channelId, parentMessageId: null, rootMessageId: messageId },
         },
       });
+      yield* events.append({
+        type: "thread.message-sent",
+        eventId: EventId.make("channel-pipeline-reply-event"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        occurredAt: now,
+        commandId: CommandId.make("channel-pipeline-reply-command"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: replyMessageId,
+          role: "user",
+          text: "Steer the work",
+          turnId: null,
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+          channel: { channelId, parentMessageId: messageId, rootMessageId: messageId },
+        },
+      });
+      for (const [index, nextMessageId] of [assistantMessageId, assistantFollowupId].entries()) {
+        yield* events.append({
+          type: "thread.message-sent",
+          eventId: EventId.make(`channel-pipeline-assistant-event-${index}`),
+          aggregateKind: "thread",
+          aggregateId: threadId,
+          occurredAt: now,
+          commandId: CommandId.make(`channel-pipeline-assistant-command-${index}`),
+          causationEventId: null,
+          correlationId: null,
+          metadata: {},
+          payload: {
+            threadId,
+            messageId: nextMessageId,
+            role: "assistant",
+            text: index === 0 ? "Working on the steer." : "The steer is complete.",
+            turnId: TurnId.make("channel-pipeline-turn"),
+            streaming: false,
+            createdAt: now,
+            updatedAt: now,
+          },
+        });
+      }
 
       yield* pipeline.bootstrap;
 
@@ -178,8 +227,14 @@ layer("channel SQL projections", (it) => {
           root_message_id AS "rootMessageId"
         FROM projection_channel_messages
         WHERE channel_id = ${channelId}
+        ORDER BY sequence, message_id
       `;
-      assert.deepStrictEqual(messageRows, [{ parentMessageId: null, rootMessageId: messageId }]);
+      assert.deepStrictEqual(messageRows, [
+        { parentMessageId: null, rootMessageId: messageId },
+        { parentMessageId: messageId, rootMessageId: messageId },
+        { parentMessageId: replyMessageId, rootMessageId: messageId },
+        { parentMessageId: replyMessageId, rootMessageId: messageId },
+      ]);
     }),
   );
 });

@@ -752,6 +752,22 @@ export const decideOrchestrationCommand = Effect.fn("decideOrchestrationCommand"
     }
 
     case "thread.delete": {
+      const owningChannel = (readModel.channels ?? []).find(
+        (channel) => channel.threadId === command.threadId && channel.deletedAt === null,
+      );
+      if (owningChannel) {
+        // Channel backing threads are an implementation detail. Keep the two
+        // aggregates consistent even if an internal caller targets the thread
+        // command directly instead of going through channel.delete.
+        return yield* decideOrchestrationCommand({
+          readModel,
+          command: {
+            type: "channel.delete",
+            commandId: command.commandId,
+            channelId: owningChannel.id,
+          },
+        });
+      }
       yield* requireThread({
         readModel,
         command,

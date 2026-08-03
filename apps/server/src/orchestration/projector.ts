@@ -642,13 +642,15 @@ export function projectEvent(
             (entry) => entry.channelId === channel.id && entry.threadMessageId === message.id,
           )
         ) {
-          const previous = channelMessages.findLast((entry) => entry.channelId === channel.id);
+          const previousUser = channelMessages.findLast(
+            (entry) => entry.channelId === channel.id && entry.role === "user",
+          );
           const parentMessageId =
             payload.channel !== undefined
               ? payload.channel.parentMessageId
-              : (previous?.id ?? null);
+              : (previousUser?.id ?? null);
           const rootMessageId =
-            payload.channel?.rootMessageId ?? previous?.rootMessageId ?? message.id;
+            payload.channel?.rootMessageId ?? previousUser?.rootMessageId ?? message.id;
           const channelMessage = yield* decodeForEvent(
             OrchestrationChannelMessage,
             {

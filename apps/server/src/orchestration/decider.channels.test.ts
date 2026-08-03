@@ -8,6 +8,7 @@ import {
   ProjectId,
   ProviderInstanceId,
   ThreadId,
+  TurnId,
   type OrchestrationEvent,
   type OrchestrationReadModel,
 } from "@t3tools/contracts";
@@ -169,6 +170,35 @@ it.layer(NodeServices.layer)("channel decider", (it) => {
         rootMessageId,
       });
 
+      const assistantMessageId = MessageId.make("channel-message-assistant");
+      readModel = yield* projectEvent(readModel, {
+        sequence: readModel.snapshotSequence + 1,
+        eventId: EventId.make("channel-message-assistant-event"),
+        aggregateKind: "thread",
+        aggregateId: threadId,
+        type: "thread.message-sent",
+        occurredAt: now,
+        commandId: CommandId.make("channel-message-assistant-command"),
+        causationEventId: null,
+        correlationId: null,
+        metadata: {},
+        payload: {
+          threadId,
+          messageId: assistantMessageId,
+          role: "assistant",
+          text: "Working on the steer.",
+          turnId: TurnId.make("channel-turn"),
+          streaming: false,
+          createdAt: now,
+          updatedAt: now,
+        },
+      });
+      expect(readModel.channelMessages?.[2]).toMatchObject({
+        id: assistantMessageId,
+        parentMessageId: replyMessageId,
+        rootMessageId,
+      });
+
       const renamed = yield* decideOrchestrationCommand({
         readModel,
         command: {
@@ -184,9 +214,9 @@ it.layer(NodeServices.layer)("channel decider", (it) => {
       const deleted = yield* decideOrchestrationCommand({
         readModel,
         command: {
-          type: "channel.delete",
-          commandId: CommandId.make("channel-delete-command"),
-          channelId,
+          type: "thread.delete",
+          commandId: CommandId.make("channel-backing-thread-delete-command"),
+          threadId,
         },
       });
       const deletedEvents = Array.isArray(deleted) ? deleted : [deleted];

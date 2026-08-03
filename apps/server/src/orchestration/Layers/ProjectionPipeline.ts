@@ -1020,7 +1020,7 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
               LIMIT 1
             `;
             if (existing.length > 0) return;
-            const previousRows = yield* sql<{
+            const previousUserRows = yield* sql<{
               readonly messageId: string;
               readonly rootMessageId: string;
             }>`
@@ -1029,17 +1029,18 @@ const makeOrchestrationProjectionPipeline = Effect.fn("makeOrchestrationProjecti
                 root_message_id AS "rootMessageId"
               FROM projection_channel_messages
               WHERE channel_id = ${channel.channelId}
+                AND role = 'user'
               ORDER BY sequence DESC, message_id DESC
               LIMIT 1
             `;
-            const previous = previousRows[0];
+            const previousUser = previousUserRows[0];
             const parentMessageId =
               event.payload.channel !== undefined
                 ? event.payload.channel.parentMessageId
-                : (previous?.messageId ?? null);
+                : (previousUser?.messageId ?? null);
             const rootMessageId =
               event.payload.channel?.rootMessageId ??
-              previous?.rootMessageId ??
+              previousUser?.rootMessageId ??
               event.payload.messageId;
             yield* sql`
               INSERT OR IGNORE INTO projection_channel_messages (
