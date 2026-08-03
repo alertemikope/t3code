@@ -14,6 +14,7 @@ import {
 } from "@t3tools/client-runtime/environment";
 import type { ScopedThreadRef, SidebarProjectGroupingMode } from "@t3tools/contracts";
 import {
+  ArchiveIcon,
   AlarmClockIcon,
   AlarmClockOffIcon,
   CheckIcon,
@@ -67,6 +68,7 @@ import {
 import { useShortcutModifierState } from "../shortcutModifierState";
 import { isTerminalFocused } from "../lib/terminalFocus";
 import { isModelPickerOpen } from "../modelPickerVisibility";
+import { refreshArchivedProjectsForEnvironment } from "../lib/archivedProjectsState";
 import { selectThreadTerminalUiState, useTerminalUiStateStore } from "../terminalUiStateStore";
 import { isMacPlatform } from "~/lib/utils";
 import { useOpenPrLink } from "../lib/openPullRequestLink";
@@ -118,7 +120,7 @@ import {
   resolveSidebarV2Status,
   searchSidebarThreadsByTitle,
   resolveWorkingStartedAt,
-  shouldNavigateAfterProjectRemoval,
+  shouldNavigateAfterProjectExit,
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebarV2,
   sortThreadsForSidebarV2,
@@ -1192,6 +1194,9 @@ export default function SidebarV2() {
   const deleteProject = useAtomCommand(projectEnvironment.delete, {
     reportFailure: false,
   });
+  const archiveProject = useAtomCommand(projectEnvironment.archive, {
+    reportFailure: false,
+  });
   const updateProject = useAtomCommand(projectEnvironment.update, {
     reportFailure: false,
   });
@@ -1463,7 +1468,7 @@ export default function SidebarV2() {
         );
         const projectRef = scopeProjectRef(project.environmentId, project.id);
         const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
-        const memberRemovalNeedsNavigation = shouldNavigateAfterProjectRemoval({
+        const memberRemovalNeedsNavigation = shouldNavigateAfterProjectExit({
           routeTarget: routeTargetRef.current,
           projectThreads: memberThreads,
           projectDraftId: projectDraftThread?.draftId ?? null,
@@ -1505,6 +1510,50 @@ export default function SidebarV2() {
       }
     },
     [deleteProject, router, threads],
+  );
+
+  const handleHideProjectMembers = useCallback(
+    async (members: readonly SidebarProjectGroupMember[]) => {
+      const draftStore = useComposerDraftStore.getState();
+
+      for (const project of members) {
+        const projectThreads = threads.filter(
+          (thread) =>
+            thread.environmentId === project.environmentId && thread.projectId === project.id,
+        );
+        const projectRef = scopeProjectRef(project.environmentId, project.id);
+        const projectDraftThread = draftStore.getDraftThreadByProjectRef(projectRef);
+        const result = await archiveProject({
+          environmentId: project.environmentId,
+          input: { projectId: project.id },
+        });
+
+        if (result._tag === "Failure") {
+          if (!isAtomCommandInterrupted(result)) {
+            toastManager.add(
+              stackedThreadToast({
+                type: "error",
+                title: `Failed to hide "${project.title}"`,
+                description: "The project could not be hidden. Try again.",
+              }),
+            );
+          }
+          return;
+        }
+
+        refreshArchivedProjectsForEnvironment(project.environmentId);
+        if (
+          shouldNavigateAfterProjectExit({
+            routeTarget: routeTargetRef.current,
+            projectThreads,
+            projectDraftId: projectDraftThread?.draftId ?? null,
+          })
+        ) {
+          void router.navigate({ to: "/" });
+        }
+      }
+    },
+    [archiveProject, router, threads],
   );
 
   const renameProjectMember = useCallback(
@@ -3143,7 +3192,18 @@ export default function SidebarV2() {
                     </label>
                   </div>
                   {projectActionsTarget.memberProjects.length > 1 ? (
-                    <div className="flex justify-end">
+                    <div className="flex justify-end gap-2">
+                      <Button
+                        size="sm"
+                        variant="ghost"
+                        onClick={() => {
+                          setProjectActionsTarget(null);
+                          void handleHideProjectMembers([member]);
+                        }}
+                      >
+                        <ArchiveIcon />
+                        Hide project
+                      </Button>
                       <Button
                         size="sm"
                         variant="ghost"
@@ -3166,25 +3226,39 @@ export default function SidebarV2() {
               <div className="flex flex-col gap-3 border-t border-border/60 bg-muted/32 px-6 py-4 sm:flex-row sm:items-center sm:justify-between">
                 <div className="min-w-0">
                   <p className="text-base font-medium text-foreground sm:text-sm">
-                    Remove this project everywhere
+                    Apply everywhere
                   </p>
                   <p className="text-base text-pretty text-muted-foreground sm:text-sm">
-                    Deletes all grouped entries and their conversation history.
+                    Hide is reversible. Remove permanently deletes every grouped entry and its
+                    conversation history.
                   </p>
                 </div>
-                <Button
-                  size="sm"
-                  variant="destructive-outline"
-                  className="shrink-0"
-                  onClick={() => {
-                    const projectGroup = projectActionsTarget;
-                    setProjectActionsTarget(null);
-                    void handleRemoveProjectMembers(projectGroup, projectGroup.memberProjects);
-                  }}
-                >
-                  <Trash2Icon />
-                  Remove all entries
-                </Button>
+                <div className="flex shrink-0 gap-2">
+                  <Button
+                    size="sm"
+                    variant="outline"
+                    onClick={() => {
+                      const projectGroup = projectActionsTarget;
+                      setProjectActionsTarget(null);
+                      void handleHideProjectMembers(projectGroup.memberProjects);
+                    }}
+                  >
+                    <ArchiveIcon />
+                    Hide all entries
+                  </Button>
+                  <Button
+                    size="sm"
+                    variant="destructive-outline"
+                    onClick={() => {
+                      const projectGroup = projectActionsTarget;
+                      setProjectActionsTarget(null);
+                      void handleRemoveProjectMembers(projectGroup, projectGroup.memberProjects);
+                    }}
+                  >
+                    <Trash2Icon />
+                    Remove all entries
+                  </Button>
+                </div>
               </div>
             ) : null}
           </DialogPanel>
@@ -3195,17 +3269,30 @@ export default function SidebarV2() {
             )}
           >
             {projectActionsTarget?.memberProjects.length === 1 ? (
-              <Button
-                variant="destructive-outline"
-                onClick={() => {
-                  const projectGroup = projectActionsTarget;
-                  setProjectActionsTarget(null);
-                  void handleRemoveProjectMembers(projectGroup, projectGroup.memberProjects);
-                }}
-              >
-                <Trash2Icon />
-                Remove project
-              </Button>
+              <div className="flex gap-2">
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    const projectGroup = projectActionsTarget;
+                    setProjectActionsTarget(null);
+                    void handleHideProjectMembers(projectGroup.memberProjects);
+                  }}
+                >
+                  <ArchiveIcon />
+                  Hide project
+                </Button>
+                <Button
+                  variant="destructive-outline"
+                  onClick={() => {
+                    const projectGroup = projectActionsTarget;
+                    setProjectActionsTarget(null);
+                    void handleRemoveProjectMembers(projectGroup, projectGroup.memberProjects);
+                  }}
+                >
+                  <Trash2Icon />
+                  Remove project
+                </Button>
+              </div>
             ) : null}
             <Button onClick={() => setProjectActionsTarget(null)}>Close</Button>
           </DialogFooter>

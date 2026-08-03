@@ -25,6 +25,7 @@ import {
   type SidebarProjectGroupingMode,
 } from "@t3tools/contracts";
 import { scopeThreadRef } from "@t3tools/client-runtime/environment";
+import type { EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { safeErrorLogAttributes } from "@t3tools/client-runtime/errors";
 import {
   isAtomCommandInterrupted,
@@ -86,6 +87,9 @@ import {
 import { usePrimaryEnvironment } from "../../state/environments";
 import { useProjects } from "../../state/entities";
 import { useArchivedThreadSnapshots } from "../../lib/archivedThreadsState";
+import { useArchivedProjectSnapshots } from "../../lib/archivedProjectsState";
+import { projectEnvironment } from "../../state/projects";
+import { useEnvironments } from "../../state/environments";
 import { formatRelativeTimeLabel, getRelativeTimeState } from "../../timestampFormat";
 import { Button } from "../ui/button";
 import {
@@ -123,6 +127,7 @@ import { ProviderInstanceCard } from "./ProviderInstanceCard";
 import { DRIVER_OPTIONS, getDriverOption } from "./providerDriverMeta";
 import {
   backgroundActivitySharedPolicySettings,
+  buildArchivedProjectSettingsEntries,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
   hasChangedBackgroundActivitySettings,
@@ -2324,11 +2329,20 @@ export function ProviderSettingsPanel() {
 }
 
 export function ArchivedThreadsPanel() {
-  const projects = useProjects();
+  const { environments } = useEnvironments();
   const { unarchiveThread, confirmAndDeleteThread } = useThreadActions();
+  const restoreProject = useAtomCommand(projectEnvironment.unarchive, { reportFailure: false });
+  const removeProject = useAtomCommand(projectEnvironment.delete, { reportFailure: false });
   const environmentIds = useMemo(
-    () => [...new Set(projects.map((project) => project.environmentId))],
-    [projects],
+    () => environments.map((environment) => environment.environmentId),
+    [environments],
+  );
+  const environmentLabels = useMemo(
+    () =>
+      new Map(
+        environments.map((environment) => [environment.environmentId, environment.label] as const),
+      ),
+    [environments],
   );
   const {
     snapshots: archivedSnapshots,
@@ -2336,6 +2350,79 @@ export function ArchivedThreadsPanel() {
     isLoading: isLoadingArchive,
     refresh: refreshArchivedThreads,
   } = useArchivedThreadSnapshots(environmentIds);
+  const {
+    snapshots: archivedProjectSnapshots,
+    error: archivedProjectsError,
+    isLoading: isLoadingArchivedProjects,
+    refresh: refreshArchivedProjects,
+  } = useArchivedProjectSnapshots(environmentIds);
+  const hiddenProjects = useMemo(
+    () =>
+      buildArchivedProjectSettingsEntries({
+        snapshots: archivedProjectSnapshots,
+        environmentLabels,
+      }),
+    [archivedProjectSnapshots, environmentLabels],
+  );
+
+  const handleRestoreProject = useCallback(
+    async (project: EnvironmentProject) => {
+      const result = await restoreProject({
+        environmentId: project.environmentId,
+        input: { projectId: project.id },
+      });
+      if (result._tag === "Success") {
+        refreshArchivedProjects();
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Failed to restore "${project.title}"`,
+            description: "The project could not be restored. Try again.",
+          }),
+        );
+      }
+    },
+    [refreshArchivedProjects, restoreProject],
+  );
+
+  const handleRemoveProjectPermanently = useCallback(
+    async (project: EnvironmentProject) => {
+      const api = readLocalApi();
+      if (!api) return;
+      const confirmed = await api.dialogs.confirm(
+        [
+          `Remove project "${project.title}" permanently?`,
+          "Its conversation history will be permanently deleted.",
+          "Files on disk are not removed.",
+          "This action cannot be undone.",
+        ].join("\n"),
+      );
+      if (!confirmed) return;
+
+      const result = await removeProject({
+        environmentId: project.environmentId,
+        input: { projectId: project.id, force: true },
+      });
+      if (result._tag === "Success") {
+        refreshArchivedProjects();
+        refreshArchivedThreads();
+        return;
+      }
+      if (!isAtomCommandInterrupted(result)) {
+        toastManager.add(
+          stackedThreadToast({
+            type: "error",
+            title: `Failed to remove "${project.title}"`,
+            description: "The project could not be removed. Try again.",
+          }),
+        );
+      }
+    },
+    [refreshArchivedProjects, refreshArchivedThreads, removeProject],
+  );
 
   const archivedGroups = useMemo(() => {
     const projectsByEnvironmentAndId = new Map(
@@ -2437,114 +2524,173 @@ export function ArchivedThreadsPanel() {
 
   return (
     <SettingsPageContainer>
-      {archivedGroups.length === 0 ? (
+      {hiddenProjects.length === 0 && archivedGroups.length === 0 ? (
         <SettingsSection
-          id={isLoadingArchive ? undefined : searchableSetting("archive").id}
+          id={
+            isLoadingArchive || isLoadingArchivedProjects
+              ? undefined
+              : searchableSetting("archive").id
+          }
           title={searchableSetting("archive").title}
         >
           <SettingsRow
             title={
               <span className="inline-flex items-center gap-2">
-                {isLoadingArchive ? (
+                {isLoadingArchive || isLoadingArchivedProjects ? (
                   <LoaderIcon className="size-3.5 animate-spin text-muted-foreground" />
                 ) : (
                   <ArchiveIcon className="size-3.5 text-muted-foreground" />
                 )}
-                {isLoadingArchive
-                  ? "Loading archived threads"
-                  : archiveError
-                    ? "Could not load archived threads"
-                    : "No archived threads"}
+                {isLoadingArchive || isLoadingArchivedProjects
+                  ? "Loading archive"
+                  : archiveError || archivedProjectsError
+                    ? "Could not load archive"
+                    : "Archive is empty"}
               </span>
             }
             description={
-              isLoadingArchive
+              isLoadingArchive || isLoadingArchivedProjects
                 ? "Checking connected environments."
-                : (archiveError ?? "Archived threads will appear here.")
+                : (archiveError ??
+                  archivedProjectsError ??
+                  "Hidden projects and archived threads will appear here.")
             }
           />
         </SettingsSection>
       ) : (
-        archivedGroups.map(({ project, threads: projectThreads }, index) => (
-          <SettingsSection
-            key={project.id}
-            id={index === 0 ? searchableSetting("archive").id : undefined}
-            title={project.name}
-            icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
-          >
-            {projectThreads.map((thread) => (
-              <SettingsRow
-                key={thread.id}
-                onContextMenu={(event) => {
-                  event.preventDefault();
-                  void (async () => {
-                    const result = await settlePromise(() =>
-                      handleArchivedThreadContextMenu(
-                        scopeThreadRef(thread.environmentId, thread.id),
-                        {
-                          x: event.clientX,
-                          y: event.clientY,
-                        },
-                      ),
-                    );
-                    if (result._tag === "Failure") {
-                      const error = squashAtomCommandFailure(result);
-                      toastManager.add(
-                        stackedThreadToast({
-                          type: "error",
-                          title: "Archived thread action failed",
-                          description:
-                            error instanceof Error ? error.message : "An error occurred.",
-                        }),
-                      );
-                    }
-                  })();
-                }}
-                title={thread.title}
-                description={
-                  <>
-                    Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
-                    {" \u00b7 Created "}
-                    {formatRelativeTimeLabel(thread.createdAt)}
-                  </>
-                }
-                control={
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
-                    onClick={() => {
-                      void (async () => {
-                        const result = await unarchiveThread(
+        <>
+          {hiddenProjects.length > 0 ? (
+            <SettingsSection id={searchableSetting("archive").id} title="Hidden projects">
+              {hiddenProjects.map(({ environmentLabel, project }) => (
+                <SettingsRow
+                  key={`${project.environmentId}:${project.id}`}
+                  title={
+                    <span className="inline-flex min-w-0 items-center gap-2">
+                      <ProjectFavicon
+                        environmentId={project.environmentId}
+                        cwd={project.workspaceRoot}
+                      />
+                      <span className="truncate">{project.title}</span>
+                    </span>
+                  }
+                  description={
+                    <>
+                      Hidden {formatRelativeTimeLabel(project.archivedAt ?? project.updatedAt)}
+                      {environmentLabel ? ` · ${environmentLabel}` : ""}
+                    </>
+                  }
+                  control={
+                    <div className="flex shrink-0 gap-2">
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        className="h-7 cursor-pointer gap-1.5 px-2.5"
+                        onClick={() => void handleRestoreProject(project)}
+                      >
+                        <ArchiveX className="size-3.5" />
+                        <span>Restore</span>
+                      </Button>
+                      <Button
+                        type="button"
+                        variant="destructive-outline"
+                        size="sm"
+                        className="h-7 cursor-pointer px-2.5"
+                        onClick={() => void handleRemoveProjectPermanently(project)}
+                      >
+                        Remove permanently
+                      </Button>
+                    </div>
+                  }
+                />
+              ))}
+            </SettingsSection>
+          ) : null}
+          {archivedGroups.map(({ project, threads: projectThreads }, index) => (
+            <SettingsSection
+              key={`${project.environmentId}:${project.id}`}
+              id={
+                hiddenProjects.length === 0 && index === 0
+                  ? searchableSetting("archive").id
+                  : undefined
+              }
+              title={project.name}
+              icon={<ProjectFavicon environmentId={project.environmentId} cwd={project.cwd} />}
+            >
+              {projectThreads.map((thread) => (
+                <SettingsRow
+                  key={`${thread.environmentId}:${thread.id}`}
+                  onContextMenu={(event) => {
+                    event.preventDefault();
+                    void (async () => {
+                      const result = await settlePromise(() =>
+                        handleArchivedThreadContextMenu(
                           scopeThreadRef(thread.environmentId, thread.id),
+                          {
+                            x: event.clientX,
+                            y: event.clientY,
+                          },
+                        ),
+                      );
+                      if (result._tag === "Failure") {
+                        const error = squashAtomCommandFailure(result);
+                        toastManager.add(
+                          stackedThreadToast({
+                            type: "error",
+                            title: "Archived thread action failed",
+                            description:
+                              error instanceof Error ? error.message : "An error occurred.",
+                          }),
                         );
-                        if (result._tag === "Success") {
-                          refreshArchivedThreads();
-                          return;
-                        }
-                        if (!isAtomCommandInterrupted(result)) {
-                          const error = squashAtomCommandFailure(result);
-                          toastManager.add(
-                            stackedThreadToast({
-                              type: "error",
-                              title: "Failed to unarchive thread",
-                              description:
-                                error instanceof Error ? error.message : "An error occurred.",
-                            }),
+                      }
+                    })();
+                  }}
+                  title={thread.title}
+                  description={
+                    <>
+                      Archived {formatRelativeTimeLabel(thread.archivedAt ?? thread.createdAt)}
+                      {" \u00b7 Created "}
+                      {formatRelativeTimeLabel(thread.createdAt)}
+                    </>
+                  }
+                  control={
+                    <Button
+                      type="button"
+                      variant="outline"
+                      size="sm"
+                      className="h-7 shrink-0 cursor-pointer gap-1.5 px-2.5"
+                      onClick={() => {
+                        void (async () => {
+                          const result = await unarchiveThread(
+                            scopeThreadRef(thread.environmentId, thread.id),
                           );
-                        }
-                      })();
-                    }}
-                  >
-                    <ArchiveX className="size-3.5" />
-                    <span>Unarchive</span>
-                  </Button>
-                }
-              />
-            ))}
-          </SettingsSection>
-        ))
+                          if (result._tag === "Success") {
+                            refreshArchivedThreads();
+                            return;
+                          }
+                          if (!isAtomCommandInterrupted(result)) {
+                            const error = squashAtomCommandFailure(result);
+                            toastManager.add(
+                              stackedThreadToast({
+                                type: "error",
+                                title: "Failed to unarchive thread",
+                                description:
+                                  error instanceof Error ? error.message : "An error occurred.",
+                              }),
+                            );
+                          }
+                        })();
+                      }}
+                    >
+                      <ArchiveX className="size-3.5" />
+                      <span>Unarchive</span>
+                    </Button>
+                  }
+                />
+              ))}
+            </SettingsSection>
+          ))}
+        </>
       )}
     </SettingsPageContainer>
   );

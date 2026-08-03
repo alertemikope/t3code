@@ -108,6 +108,7 @@ import { readLocalApi } from "../localApi";
 import { useComposerDraftStore } from "../composerDraftStore";
 import { useNewThreadHandler } from "../hooks/useHandleNewThread";
 import { useDesktopUpdateState } from "../state/desktopUpdate";
+import { refreshArchivedProjectsForEnvironment } from "../lib/archivedProjectsState";
 
 import { useThreadActions } from "../hooks/useThreadActions";
 import { projectEnvironment } from "../state/projects";
@@ -119,6 +120,7 @@ import {
   buildThreadRouteParams,
   resolveActiveThreadRouteRef,
   resolveThreadRouteTarget,
+  type ThreadRouteTarget,
 } from "../threadRoutes";
 import { stackedThreadToast, toastManager } from "./ui/toast";
 import { formatRelativeTimeLabel } from "../timestampFormat";
@@ -181,6 +183,7 @@ import {
   resolveThreadStatusPill,
   orderItemsByPreferredIds,
   shouldClearThreadSelectionOnMouseDown,
+  shouldNavigateAfterProjectExit,
   sortProjectsForSidebar,
   useThreadJumpHintVisibility,
   ThreadStatusPill,
@@ -1054,6 +1057,7 @@ const SidebarProjectThreadList = memo(function SidebarProjectThreadList(
 
 interface SidebarProjectItemProps {
   project: SidebarProjectSnapshot;
+  routeTargetRef: React.RefObject<ThreadRouteTarget | null>;
   isThreadListExpanded: boolean;
   activeRouteThreadKey: string | null;
   newThreadShortcutLabel: string | null;
@@ -1074,6 +1078,7 @@ interface SidebarProjectItemProps {
 const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjectItemProps) {
   const {
     project,
+    routeTargetRef,
     isThreadListExpanded,
     activeRouteThreadKey,
     newThreadShortcutLabel,
@@ -1101,6 +1106,9 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
   );
   const projectGroupingSettings = useClientSettings(selectProjectGroupingSettings);
   const deleteProject = useAtomCommand(projectEnvironment.delete, {
+    reportFailure: false,
+  });
+  const archiveProject = useAtomCommand(projectEnvironment.archive, {
     reportFailure: false,
   });
   const updateProject = useAtomCommand(projectEnvironment.update, {
@@ -1448,6 +1456,47 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [deleteProject],
   );
 
+  const hideProject = useCallback(
+    async (member: SidebarProjectGroupMember) => {
+      const projectRef = scopeProjectRef(member.environmentId, member.id);
+      const projectDraftThread = useComposerDraftStore
+        .getState()
+        .getDraftThreadByProjectRef(projectRef);
+      const memberThreads = Array.from(sidebarThreadByKeyRef.current.values()).filter(
+        (thread) => thread.environmentId === member.environmentId && thread.projectId === member.id,
+      );
+      const result = await archiveProject({
+        environmentId: member.environmentId,
+        input: { projectId: member.id },
+      });
+
+      if (result._tag === "Failure") {
+        if (!isAtomCommandInterrupted(result)) {
+          toastManager.add(
+            stackedThreadToast({
+              type: "error",
+              title: `Failed to hide "${member.title}"`,
+              description: "The project could not be hidden. Try again.",
+            }),
+          );
+        }
+        return;
+      }
+
+      refreshArchivedProjectsForEnvironment(member.environmentId);
+      if (
+        shouldNavigateAfterProjectExit({
+          routeTarget: routeTargetRef.current,
+          projectThreads: memberThreads,
+          projectDraftId: projectDraftThread?.draftId ?? null,
+        })
+      ) {
+        void router.navigate({ to: "/" });
+      }
+    },
+    [archiveProject, router],
+  );
+
   const handleRemoveProject = useCallback(
     async (member: SidebarProjectGroupMember) => {
       const api = readLocalApi();
@@ -1586,7 +1635,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
 
         const actionHandlers = new Map<string, () => Promise<void> | void>();
         const makeLeaf = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "copy-path" | "archive" | "delete",
           member: SidebarProjectGroupMember,
           options?: {
             destructive?: boolean;
@@ -1605,6 +1654,8 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
               case "copy-path":
                 copyPathToClipboard(member.workspaceRoot, { path: member.workspaceRoot });
                 return;
+              case "archive":
+                return hideProject(member);
               case "delete":
                 return handleRemoveProject(member);
             }
@@ -1619,7 +1670,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
         };
 
         const buildTargetedItem = (
-          action: "rename" | "grouping" | "copy-path" | "delete",
+          action: "rename" | "grouping" | "copy-path" | "archive" | "delete",
           label: string,
           options?: {
             destructive?: boolean;
@@ -1634,14 +1685,22 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
                 ...(options?.isDisabled?.(singleMember) ? { disabled: true } : {}),
               }),
               label,
-              ...(action === "delete" ? { icon: "trash" } : {}),
+              ...(action === "archive"
+                ? { icon: "archivebox" }
+                : action === "delete"
+                  ? { icon: "trash" }
+                  : {}),
             };
           }
 
           return {
             id: `${action}:submenu`,
             label,
-            ...(action === "delete" ? { icon: "trash" } : {}),
+            ...(action === "archive"
+              ? { icon: "archivebox" }
+              : action === "delete"
+                ? { icon: "trash" }
+                : {}),
             children: project.memberProjects.map((member) =>
               makeLeaf(action, member, {
                 ...(options?.destructive ? { destructive: true } : {}),
@@ -1656,6 +1715,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
             buildTargetedItem("rename", "Rename"),
             buildTargetedItem("grouping", "Group into..."),
             buildTargetedItem("copy-path", "Copy Path"),
+            buildTargetedItem("archive", "Hide project"),
             buildTargetedItem("delete", "Remove", {
               destructive: true,
             }),
@@ -1676,6 +1736,7 @@ const SidebarProjectItem = memo(function SidebarProjectItem(props: SidebarProjec
     [
       copyPathToClipboard,
       handleRemoveProject,
+      hideProject,
       openProjectGroupingDialog,
       openProjectRenameDialog,
       project.groupedProjectCount,
@@ -2748,6 +2809,7 @@ interface SidebarProjectsContentProps {
   expandedThreadListsByProject: ReadonlySet<string>;
   activeRouteProjectKey: string | null;
   routeThreadKey: string | null;
+  routeTargetRef: React.RefObject<ThreadRouteTarget | null>;
   newThreadShortcutLabel: string | null;
   commandPaletteShortcutLabel: string | null;
   threadJumpLabelByKey: ReadonlyMap<string, string>;
@@ -2788,6 +2850,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
     expandedThreadListsByProject,
     activeRouteProjectKey,
     routeThreadKey,
+    routeTargetRef,
     newThreadShortcutLabel,
     commandPaletteShortcutLabel,
     threadJumpLabelByKey,
@@ -2922,6 +2985,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
                     {(dragHandleProps) => (
                       <SidebarProjectItem
                         project={project}
+                        routeTargetRef={routeTargetRef}
                         isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                         activeRouteThreadKey={
                           activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -2954,6 +3018,7 @@ const SidebarProjectsContent = memo(function SidebarProjectsContent(
               <SidebarProjectListRow
                 key={project.projectKey}
                 project={project}
+                routeTargetRef={routeTargetRef}
                 isThreadListExpanded={expandedThreadListsByProject.has(project.projectKey)}
                 activeRouteThreadKey={
                   activeRouteProjectKey === project.projectKey ? routeThreadKey : null
@@ -3007,6 +3072,8 @@ export default function Sidebar() {
     strict: false,
     select: (params) => resolveThreadRouteTarget(params),
   });
+  const routeTargetRef = useRef(routeTarget);
+  routeTargetRef.current = routeTarget;
   const routeDraftThread = useComposerDraftStore((store) =>
     routeTarget?.kind === "draft" ? store.getDraftSession(routeTarget.draftId) : null,
   );
@@ -3618,6 +3685,7 @@ export default function Sidebar() {
             expandedThreadListsByProject={expandedThreadListsByProject}
             activeRouteProjectKey={activeRouteProjectKey}
             routeThreadKey={routeThreadKey}
+            routeTargetRef={routeTargetRef}
             newThreadShortcutLabel={newThreadShortcutLabel}
             commandPaletteShortcutLabel={commandPaletteShortcutLabel}
             threadJumpLabelByKey={visibleThreadJumpLabelByKey}

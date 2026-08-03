@@ -55,6 +55,7 @@ import { buildHomeProjectScopes, buildHomeThreadGroups } from "../home/homeThrea
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "../home/thread-swipe-actions";
 import { usePendingTaskListActions } from "../home/usePendingTaskListActions";
 import { useThreadListActions } from "../home/useThreadListActions";
+import { useProjectListActions } from "../projects/useProjectListActions";
 import { WorkspaceConnectionStatus } from "../home/WorkspaceConnectionStatus";
 import { shouldShowWorkspaceConnectionStatus } from "../home/workspace-connection-status";
 import { SidebarHeaderActions } from "./sidebar-header-actions";
@@ -139,6 +140,7 @@ interface ThreadNavigationSidebarProps {
   readonly onOpenSettings: () => void;
   readonly onOpenEnvironmentSettings: () => void;
   readonly onNewThreadInProject: (project: EnvironmentProject) => void;
+  readonly onActiveProjectHidden: () => void;
   readonly onSearchQueryChange: (query: string) => void;
   readonly onSelectThread: (thread: EnvironmentThreadShell) => void;
   readonly onRequestVisibility: () => void;
@@ -206,6 +208,36 @@ function ThreadNavigationSidebarPane(
     unsnoozeThread,
     unsettleThread,
   } = useThreadListActions();
+  const { hideProjects } = useProjectListActions();
+  const selectedThreadKey = props.selectedThreadKey;
+  const selectedThreadKeyRef = useRef(selectedThreadKey);
+  selectedThreadKeyRef.current = selectedThreadKey;
+  const onActiveProjectHidden = props.onActiveProjectHidden;
+  const handleHideProjects = useCallback(
+    async (projectsToHide: ReadonlyArray<EnvironmentProject>) => {
+      const hidden = await hideProjects(projectsToHide);
+      if (!hidden) return;
+      const selectedThread = threads.find(
+        (thread) =>
+          scopedThreadKey(thread.environmentId, thread.id) === selectedThreadKeyRef.current,
+      );
+      const hidesActiveProject =
+        selectedThread !== undefined &&
+        projectsToHide.some(
+          (project) =>
+            project.environmentId === selectedThread.environmentId &&
+            project.id === selectedThread.projectId,
+        );
+      if (hidesActiveProject) onActiveProjectHidden();
+    },
+    [hideProjects, onActiveProjectHidden, threads],
+  );
+  const requestHideProjects = useCallback(
+    (projectsToHide: ReadonlyArray<EnvironmentProject>) => {
+      void handleHideProjects(projectsToHide);
+    },
+    [handleHideProjects],
+  );
   const threadListV2Enabled = useThreadListV2Enabled();
   const pendingTasks = usePendingNewTasks();
   const { openPendingTask, confirmDeletePendingTask } = usePendingTaskListActions();
@@ -971,6 +1003,8 @@ function ThreadNavigationSidebarPane(
               // placeholder shell rather than a real project.
               newThreadTarget={item.group.newThreadTarget}
               onNewThread={props.onNewThreadInProject}
+              projects={item.group.key.startsWith("pending-project:") ? [] : item.group.projects}
+              onHideProjects={requestHideProjects}
               project={item.group.representative}
               threadCount={item.group.threads.length + item.group.pendingTasks.length}
               title={item.group.title}
@@ -1045,6 +1079,7 @@ function ThreadNavigationSidebarPane(
       handleSwipeableClose,
       handleSwipeableWillOpen,
       openPendingTask,
+      requestHideProjects,
       projectByKey,
       projectCwdByKey,
       projectTitleByProjectKey,

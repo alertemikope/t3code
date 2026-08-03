@@ -1,6 +1,8 @@
 import {
   DEFAULT_SERVER_SETTINGS,
   DEFAULT_UNIFIED_SETTINGS,
+  EnvironmentId,
+  ProjectId,
   ProviderDriverKind,
   ProviderInstanceId,
   type ProviderInstanceConfig,
@@ -10,6 +12,7 @@ import * as Duration from "effect/Duration";
 import { describe, expect, it } from "vite-plus/test";
 import {
   backgroundActivitySharedPolicySettings,
+  buildArchivedProjectSettingsEntries,
   buildProviderInstanceUpdatePatch,
   formatDiagnosticsDescription,
   hasChangedBackgroundActivitySettings,
@@ -17,6 +20,56 @@ import {
   projectGroupingModeFromToggle,
   resolveBackgroundActivityProfileOption,
 } from "./SettingsPanels.logic";
+
+describe("archived project settings entries", () => {
+  it("keeps identical project ids scoped to their environment and sorts newest first", () => {
+    const environmentA = EnvironmentId.make("environment-a");
+    const environmentB = EnvironmentId.make("environment-b");
+    const project = (title: string, archivedAt: string) => ({
+      id: ProjectId.make("shared-id"),
+      title,
+      workspaceRoot: `/work/${title}`,
+      repositoryIdentity: null,
+      defaultModelSelection: null,
+      scripts: [],
+      createdAt: "2026-07-01T00:00:00.000Z",
+      updatedAt: archivedAt,
+      archivedAt,
+    });
+
+    const result = buildArchivedProjectSettingsEntries({
+      snapshots: [
+        {
+          environmentId: environmentA,
+          snapshot: {
+            snapshotSequence: 1,
+            projects: [project("Older", "2026-07-02T00:00:00.000Z")],
+            updatedAt: "2026-07-03T00:00:00.000Z",
+          },
+        },
+        {
+          environmentId: environmentB,
+          snapshot: {
+            snapshotSequence: 2,
+            projects: [project("Newer", "2026-07-03T00:00:00.000Z")],
+            updatedAt: "2026-07-03T00:00:00.000Z",
+          },
+        },
+      ],
+      environmentLabels: new Map([
+        [environmentA, "Laptop"],
+        [environmentB, "Server"],
+      ]),
+    });
+
+    expect(
+      result.map(({ environmentLabel, project }) => [environmentLabel, project.title]),
+    ).toEqual([
+      ["Server", "Newer"],
+      ["Laptop", "Older"],
+    ]);
+  });
+});
 
 describe("background activity settings restore", () => {
   it("detects legacy interval values even when the structured setting is at its default", () => {

@@ -8,6 +8,8 @@ import type {
   SidebarProjectGroupingMode,
   UnifiedSettings,
 } from "@t3tools/contracts";
+import type { ArchivedProjectsSnapshotEntry } from "@t3tools/client-runtime/state/projects";
+import { scopeProject, type EnvironmentProject } from "@t3tools/client-runtime/state/shell";
 import { DEFAULT_UNIFIED_SETTINGS } from "@t3tools/contracts/settings";
 import {
   normalizeBackgroundActivitySettings,
@@ -15,6 +17,37 @@ import {
   resolveServerBackgroundActivitySettings,
 } from "@t3tools/shared/backgroundActivitySettings";
 import * as Equal from "effect/Equal";
+
+export interface ArchivedProjectSettingsEntry {
+  readonly environmentLabel: string | null;
+  readonly project: EnvironmentProject;
+}
+
+export function buildArchivedProjectSettingsEntries(input: {
+  readonly snapshots: ReadonlyArray<ArchivedProjectsSnapshotEntry>;
+  readonly environmentLabels: ReadonlyMap<string, string>;
+}): ReadonlyArray<ArchivedProjectSettingsEntry> {
+  return input.snapshots
+    .flatMap(({ environmentId, snapshot }) =>
+      snapshot.projects
+        .filter((project) => project.archivedAt !== null)
+        .map((project) => ({
+          environmentLabel: input.environmentLabels.get(environmentId) ?? null,
+          project: scopeProject(environmentId, project),
+        })),
+    )
+    .toSorted((left, right) => {
+      const byArchivedAt = (right.project.archivedAt ?? "").localeCompare(
+        left.project.archivedAt ?? "",
+      );
+      return (
+        byArchivedAt ||
+        left.project.title.localeCompare(right.project.title) ||
+        left.project.environmentId.localeCompare(right.project.environmentId) ||
+        left.project.id.localeCompare(right.project.id)
+      );
+    });
+}
 
 export function isProjectGroupingEnabled(mode: SidebarProjectGroupingMode): boolean {
   return mode !== "separate";

@@ -348,7 +348,7 @@ export function resolveAdjacentThreadId<T>(input: {
   return currentIndex < threadIds.length - 1 ? (threadIds[currentIndex + 1] ?? null) : null;
 }
 
-export function shouldNavigateAfterProjectRemoval(input: {
+export function shouldNavigateAfterProjectExit(input: {
   routeTarget: ThreadRouteTarget | null;
   projectThreads: readonly {
     environmentId: string;

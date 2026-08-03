@@ -73,6 +73,7 @@ import {
 import { SwipeableScrollGateProvider, useSwipeableScrollGate } from "./thread-swipe-actions";
 import { WorkspaceConnectionStatus } from "./WorkspaceConnectionStatus";
 import { shouldShowWorkspaceConnectionStatus } from "./workspace-connection-status";
+import { useProjectListActions } from "../projects/useProjectListActions";
 
 /* ─── Types ──────────────────────────────────────────────────────────── */
 
@@ -197,6 +198,13 @@ function HomeTopContentSpacer() {
 /* ─── Main screen ────────────────────────────────────────────────────── */
 
 export function HomeScreen(props: HomeScreenProps) {
+  const { hideProjects } = useProjectListActions();
+  const handleHideProjects = useCallback(
+    (projects: ReadonlyArray<EnvironmentProject>) => {
+      void hideProjects(projects);
+    },
+    [hideProjects],
+  );
   const [groupDisplayStates, setGroupDisplayStates] = useState<
     ReadonlyMap<string, HomeGroupDisplayState>
   >(() => new Map());
@@ -847,6 +855,8 @@ export function HomeScreen(props: HomeScreenProps) {
               // so the quick new-thread button is single-real-project only.
               newThreadTarget={item.group.newThreadTarget}
               onNewThread={props.onNewThreadInProject}
+              projects={item.group.key.startsWith("pending-project:") ? [] : item.group.projects}
+              onHideProjects={handleHideProjects}
               project={item.group.representative}
               threadCount={item.group.threads.length + item.group.pendingTasks.length}
               title={item.group.title}
@@ -915,6 +925,7 @@ export function HomeScreen(props: HomeScreenProps) {
       props.onDeletePendingTask,
       props.onDeleteThread,
       props.onNewThreadInProject,
+      handleHideProjects,
       props.onSelectPendingTask,
       props.onSelectThread,
       props.searchQuery,

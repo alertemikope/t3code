@@ -311,6 +311,7 @@ export function buildHomeThreadGroups(input: {
             scripts: [],
             createdAt: pendingTask.message.createdAt,
             updatedAt: pendingTask.message.createdAt,
+            archivedAt: null,
           },
         ],
         pendingTasks: [],

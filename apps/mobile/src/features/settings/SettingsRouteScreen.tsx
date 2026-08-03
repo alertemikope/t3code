@@ -678,7 +678,7 @@ function capitalize(value: string): string {
 function ArchivedThreadsSettingsSection() {
   return (
     <SettingsSection title="Threads">
-      <SettingsRow icon="archivebox" label="Archived Threads" target="SettingsArchive" />
+      <SettingsRow icon="archivebox" label="Archive" target="SettingsArchive" />
     </SettingsSection>
   );
 }

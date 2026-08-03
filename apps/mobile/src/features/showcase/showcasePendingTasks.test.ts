@@ -18,6 +18,7 @@ const projects: ReadonlyArray<EnvironmentProject> = [
     scripts: [],
     createdAt: "2026-07-16T08:00:00.000Z",
     updatedAt: "2026-07-16T08:00:00.000Z",
+    archivedAt: null,
   },
   {
     environmentId: EnvironmentId.make("suspense-station"),
@@ -29,6 +30,7 @@ const projects: ReadonlyArray<EnvironmentProject> = [
     scripts: [],
     createdAt: "2026-07-16T08:00:00.000Z",
     updatedAt: "2026-07-16T08:00:00.000Z",
+    archivedAt: null,
   },
 ];
 

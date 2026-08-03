@@ -7,15 +7,18 @@ import { useCallback, useMemo, useState } from "react";
 import { useSavedRemoteConnections } from "../../state/use-remote-environment-registry";
 import { useClerkSettingsSheetDetent } from "../cloud/ClerkSettingsSheetDetent";
 import { useArchivedThreadListActions } from "../home/useThreadListActions";
+import { useProjectListActions } from "../projects/useProjectListActions";
 import {
   ArchivedThreadsScreen,
   type ArchivedThreadsHeaderEnvironment,
 } from "./ArchivedThreadsScreen";
 import { buildArchivedThreadGroups, type ArchivedThreadSortOrder } from "./archivedThreadList";
+import { buildArchivedProjectList } from "./archivedProjectList";
 import {
   refreshArchivedThreadsForEnvironment,
   useArchivedThreadSnapshots,
 } from "./useArchivedThreadSnapshots";
+import { useArchivedProjectSnapshots } from "./useArchivedProjectSnapshots";
 
 export function ArchivedThreadsRouteScreen() {
   const { expand } = useClerkSettingsSheetDetent();
@@ -48,6 +51,12 @@ export function ArchivedThreadsRouteScreen() {
     [environments],
   );
   const { error, isLoading, refresh, snapshots } = useArchivedThreadSnapshots(environmentIds);
+  const {
+    error: archivedProjectsError,
+    isLoading: isLoadingArchivedProjects,
+    refresh: refreshArchivedProjects,
+    snapshots: archivedProjectSnapshots,
+  } = useArchivedProjectSnapshots(environmentIds);
   const groups = useMemo(
     () =>
       buildArchivedThreadGroups({
@@ -59,6 +68,21 @@ export function ArchivedThreadsRouteScreen() {
       }),
     [environmentLabels, searchQuery, selectedEnvironmentId, snapshots, sortOrder],
   );
+  const archivedProjects = useMemo(
+    () =>
+      buildArchivedProjectList({
+        snapshots: archivedProjectSnapshots,
+        environmentLabels,
+        environmentId: selectedEnvironmentId,
+        searchQuery,
+        sortOrder,
+      }),
+    [archivedProjectSnapshots, environmentLabels, searchQuery, selectedEnvironmentId, sortOrder],
+  );
+  const refreshArchive = useCallback(() => {
+    refresh();
+    refreshArchivedProjects();
+  }, [refresh, refreshArchivedProjects]);
   const refreshChangedEnvironment = useCallback(
     (thread: { readonly environmentId: EnvironmentId }) => {
       refreshArchivedThreadsForEnvironment(thread.environmentId);
@@ -67,23 +91,27 @@ export function ArchivedThreadsRouteScreen() {
   );
   const { unarchiveThread, confirmDeleteThread } =
     useArchivedThreadListActions(refreshChangedEnvironment);
+  const { confirmRemoveProject, restoreProject } = useProjectListActions();
 
   useFocusEffect(
     useCallback(() => {
       expand();
-      refresh();
-    }, [expand, refresh]),
+      refreshArchive();
+    }, [expand, refreshArchive]),
   );
 
   return (
     <ArchivedThreadsScreen
       environments={environments}
-      error={error}
+      archivedProjects={archivedProjects}
+      error={error ?? archivedProjectsError}
       groups={groups}
-      isLoading={isLoading}
+      isLoading={isLoading || isLoadingArchivedProjects}
+      onRemoveProject={confirmRemoveProject}
       onDeleteThread={confirmDeleteThread}
       onEnvironmentChange={setSelectedEnvironmentId}
-      onRefresh={refresh}
+      onRefresh={refreshArchive}
+      onRestoreProject={(project) => void restoreProject(project)}
       onSearchQueryChange={setSearchQuery}
       onSortOrderChange={setSortOrder}
       onUnarchiveThread={unarchiveThread}

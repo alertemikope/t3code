@@ -86,6 +86,8 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
   /** Project a quick new thread should target; null hides the button. */
   readonly newThreadTarget?: EnvironmentProject | null;
   readonly onNewThread?: (project: EnvironmentProject) => void;
+  readonly projects?: ReadonlyArray<EnvironmentProject>;
+  readonly onHideProjects?: (projects: ReadonlyArray<EnvironmentProject>) => void;
 }) {
   const iconMutedColor = useThemeColor("--color-icon-muted");
   const { groupKey, onGroupAction, onNewThread } = props;
@@ -101,6 +103,27 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
     }
   }, [newThreadTarget, onNewThread]);
   const showNewThreadButton = onNewThread !== undefined && newThreadTarget !== null;
+  const projects = props.projects ?? [];
+  const showProjectActions = props.onHideProjects !== undefined && projects.length > 0;
+  const projectActions = useMemo<MenuAction[]>(
+    () =>
+      showProjectActions
+        ? [
+            {
+              id: "hide",
+              title: projects.length > 1 ? "Hide project everywhere" : "Hide project",
+              image: "archivebox",
+            },
+          ]
+        : [],
+    [projects.length, showProjectActions],
+  );
+  const handleProjectAction = useCallback(
+    (event: { nativeEvent: { event: string } }) => {
+      if (event.nativeEvent.event === "hide") props.onHideProjects?.(projects);
+    },
+    [projects, props.onHideProjects],
+  );
 
   // The new-thread button is a SIBLING of the collapse toggle, not a child:
   // nested touchables are unreachable to VoiceOver/TalkBack (the parent
@@ -175,6 +198,24 @@ export const ThreadListGroupHeader = memo(function ThreadListGroupHeader(props: 
             weight="medium"
           />
         </Pressable>
+      ) : null}
+      {showProjectActions ? (
+        <ControlPillMenu actions={projectActions} onPressAction={handleProjectAction}>
+          <Pressable
+            accessibilityLabel={`Project actions for ${props.title}`}
+            accessibilityRole="button"
+            hitSlop={{ ...verticalHitSlop, left: 10, right: 14 }}
+            style={({ pressed }) => ({ opacity: pressed ? 0.5 : 1, paddingLeft: 12 })}
+          >
+            <SymbolView
+              name="ellipsis"
+              size={compact ? 20 : 16}
+              tintColor={iconMutedColor}
+              type="monochrome"
+              weight="medium"
+            />
+          </Pressable>
+        </ControlPillMenu>
       ) : null}
     </View>
   );

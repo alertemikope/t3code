@@ -445,6 +445,9 @@ function AdaptiveWorkspaceLayoutContent(
     },
     [navigation],
   );
+  const handleActiveProjectHidden = useCallback(() => {
+    navigation.dispatch(StackActions.replace("Home"));
+  }, [navigation]);
 
   const renderedSidebarWidth = useSharedValue(
     panes.primarySidebarVisible ? (layout.listPaneWidth ?? 0) : 0,
@@ -524,6 +527,7 @@ function AdaptiveWorkspaceLayoutContent(
                 onOpenSettings={handleOpenSettings}
                 onOpenEnvironmentSettings={handleOpenEnvironmentSettings}
                 onNewThreadInProject={handleNewThreadInProject}
+                onActiveProjectHidden={handleActiveProjectHidden}
                 onSelectThread={handleSelectThread}
                 onSearchQueryChange={setPrimarySidebarSearchQuery}
                 searchQuery={primarySidebarSearchQuery}

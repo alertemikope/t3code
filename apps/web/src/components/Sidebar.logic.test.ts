@@ -22,7 +22,7 @@ import {
   resolveWorkingStartedAt,
   searchSidebarThreadsByTitle,
   formatWorkingDurationLabel,
-  shouldNavigateAfterProjectRemoval,
+  shouldNavigateAfterProjectExit,
   shouldClearThreadSelectionOnMouseDown,
   sortLogicalProjectsForSidebar,
   sortSettledThreadsForSidebarV2,
@@ -48,12 +48,12 @@ import {
 
 const localEnvironmentId = EnvironmentId.make("environment-local");
 
-describe("shouldNavigateAfterProjectRemoval", () => {
+describe("shouldNavigateAfterProjectExit", () => {
   const projectThreads = [{ environmentId: "environment-local", id: "thread-1" }];
 
   it("navigates away from a draft route owned by the removed project", () => {
     expect(
-      shouldNavigateAfterProjectRemoval({
+      shouldNavigateAfterProjectExit({
         routeTarget: { kind: "draft", draftId: "draft-1" as never },
         projectThreads,
         projectDraftId: "draft-1",
@@ -63,7 +63,7 @@ describe("shouldNavigateAfterProjectRemoval", () => {
 
   it("does not navigate away from a different draft route", () => {
     expect(
-      shouldNavigateAfterProjectRemoval({
+      shouldNavigateAfterProjectExit({
         routeTarget: { kind: "draft", draftId: "draft-2" as never },
         projectThreads,
         projectDraftId: "draft-1",
@@ -73,7 +73,7 @@ describe("shouldNavigateAfterProjectRemoval", () => {
 
   it("navigates away from a server thread owned by the removed project", () => {
     expect(
-      shouldNavigateAfterProjectRemoval({
+      shouldNavigateAfterProjectExit({
         routeTarget: {
           kind: "server",
           threadRef: {
@@ -89,7 +89,7 @@ describe("shouldNavigateAfterProjectRemoval", () => {
 
   it("does not navigate from an unrelated route", () => {
     expect(
-      shouldNavigateAfterProjectRemoval({
+      shouldNavigateAfterProjectExit({
         routeTarget: null,
         projectThreads,
         projectDraftId: null,
@@ -1100,7 +1100,7 @@ describe("getVisibleThreadsForProject", () => {
 });
 
 function makeProject(overrides: Partial<Project> = {}): Project {
-  const { defaultModelSelection, ...rest } = overrides;
+  const { archivedAt, defaultModelSelection, ...rest } = overrides;
   return {
     id: ProjectId.make("project-1"),
     environmentId: localEnvironmentId,
@@ -1116,6 +1116,7 @@ function makeProject(overrides: Partial<Project> = {}): Project {
     updatedAt: "2026-03-09T10:00:00.000Z",
     scripts: [],
     ...rest,
+    archivedAt: archivedAt ?? null,
   };
 }
 

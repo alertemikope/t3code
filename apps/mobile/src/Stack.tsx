@@ -165,7 +165,7 @@ const SettingsSheetStack = createNativeStackNavigator({
       screen: ArchivedThreadsRouteScreen,
       linking: "archive",
       options: {
-        title: "Archived Threads",
+        title: "Archive",
       },
     }),
     SettingsAppearance: createNativeStackScreen({
