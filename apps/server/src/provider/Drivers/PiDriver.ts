@@ -1,21 +1,19 @@
+import { ModelRuntime, VERSION as PI_VERSION } from "@earendil-works/pi-coding-agent";
 import { PiSettings, ProviderDriverKind, type ServerProvider } from "@t3tools/contracts";
-import { tokenizeCliArgs } from "@t3tools/shared/cliArgs";
 import * as Crypto from "effect/Crypto";
 import * as Effect from "effect/Effect";
 import * as FileSystem from "effect/FileSystem";
 import * as Path from "effect/Path";
 import * as Schema from "effect/Schema";
-import { ChildProcessSpawner } from "effect/unstable/process";
 
 import { ServerConfig } from "../../config.ts";
 import { makeUnsupportedTextGeneration } from "../../textGeneration/UnsupportedTextGeneration.ts";
 import { ProviderDriverError } from "../Errors.ts";
-import { makeGenericAcpAdapter } from "../Layers/GenericAcpAdapter.ts";
 import {
   buildGenericAcpProviderSnapshot,
   makeStaticServerProvider,
 } from "../Layers/GenericAcpProvider.ts";
-import { ProviderEventLoggers } from "../Layers/ProviderEventLoggers.ts";
+import { makeNativePiAdapter } from "../Layers/NativePiAdapter.ts";
 import {
   defaultProviderContinuationIdentity,
   type ProviderDriver,
@@ -25,34 +23,15 @@ import {
   makeManualOnlyProviderMaintenanceCapabilities,
   type ProviderMaintenanceCapabilities,
 } from "../providerMaintenance.ts";
-import { mergeProviderInstanceEnvironment } from "../ProviderInstanceEnvironment.ts";
 
 const decodePiSettings = Schema.decodeSync(PiSettings);
 const DRIVER_KIND = ProviderDriverKind.make("piAgent");
-const DEFINITION = {
-  displayName: "Pi",
-  badgeLabel: "ACP",
-  readyMessage: "Pi ACP is configured and uses your existing Pi credentials and extensions.",
-  disabledMessage: "Pi is disabled for this provider instance.",
-  builtInModels: [
-    { slug: "openai-codex/gpt-5.6-sol", name: "GPT-5.6 Sol" },
-    { slug: "openai-codex/gpt-5.6-terra", name: "GPT-5.6 Terra" },
-    { slug: "openai-codex/gpt-5.6-luna", name: "GPT-5.6 Luna" },
-  ],
-} as const;
-
-export type PiDriverEnv =
-  | ChildProcessSpawner.ChildProcessSpawner
-  | Crypto.Crypto
-  | FileSystem.FileSystem
-  | Path.Path
-  | ProviderEventLoggers
-  | ServerConfig;
+export type PiDriverEnv = Crypto.Crypto | FileSystem.FileSystem | Path.Path | ServerConfig;
 
 function maintenanceCapabilities(): ProviderMaintenanceCapabilities {
   return makeManualOnlyProviderMaintenanceCapabilities({
     provider: DRIVER_KIND,
-    packageName: "pi-acp",
+    packageName: "@earendil-works/pi-coding-agent",
   });
 }
 
@@ -60,50 +39,63 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
   driverKind: DRIVER_KIND,
   metadata: {
     displayName: "Pi",
-    supportsMultipleInstances: true,
+    supportsMultipleInstances: false,
   },
   configSchema: PiSettings,
   defaultConfig: (): PiSettings => decodePiSettings({}),
-  create: ({ instanceId, displayName, accentColor, environment, enabled, config }) =>
+  create: ({ instanceId, displayName, accentColor, enabled, config }) =>
     Effect.gen(function* () {
-      const eventLoggers = yield* ProviderEventLoggers;
-      const processEnv = mergeProviderInstanceEnvironment(environment);
-      const effectiveConfig = { ...config, enabled } satisfies PiSettings;
       const continuationIdentity = defaultProviderContinuationIdentity({
         driverKind: DRIVER_KIND,
         instanceId,
       });
-      const adapter = yield* makeGenericAcpAdapter(
-        {
-          enabled: effectiveConfig.enabled,
-          command: effectiveConfig.binaryPath,
-          args: tokenizeCliArgs(effectiveConfig.launchArgs),
+      const modelRuntime = yield* Effect.tryPromise({
+        try: async () => {
+          return ModelRuntime.create();
         },
-        {
-          provider: DRIVER_KIND,
-          instanceId,
-          environment: processEnv,
-          readyReason: "Pi session ready",
-          ...(eventLoggers.native ? { nativeEventLogger: eventLoggers.native } : {}),
-        },
-      );
+        catch: (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: "Failed to read models from the embedded Pi runtime.",
+            cause,
+          }),
+      });
+      const availableModels = yield* Effect.tryPromise({
+        try: () => modelRuntime.getAvailable(),
+        catch: (cause) =>
+          new ProviderDriverError({
+            driver: DRIVER_KIND,
+            instanceId,
+            detail: "Failed to read models from the embedded Pi runtime.",
+            cause,
+          }),
+      });
+      const builtInModels = availableModels.map((model) => ({
+        slug: `${model.provider}/${model.id}`,
+        name: model.name || model.id,
+      }));
+      const adapter = yield* makeNativePiAdapter({ instanceId, enabled, modelRuntime });
       const draft = yield* buildGenericAcpProviderSnapshot({
-        definition: DEFINITION,
-        enabled: effectiveConfig.enabled,
-        customModels: effectiveConfig.customModels,
+        definition: {
+          displayName: "Pi",
+          badgeLabel: "SDK",
+          readyMessage: `Pi ${PI_VERSION} runs natively inside T3 and reuses your existing credentials, extensions, skills and sessions.`,
+          disabledMessage: "Native Pi is disabled for this provider instance.",
+          builtInModels,
+        },
+        enabled,
+        customModels: config.customModels,
       });
       const snapshotValue: ServerProvider = {
         ...draft,
+        version: PI_VERSION,
         instanceId,
         driver: DRIVER_KIND,
         ...(displayName ? { displayName } : {}),
         ...(accentColor ? { accentColor } : {}),
         continuation: { groupKey: continuationIdentity.continuationKey },
       };
-      const snapshot = makeStaticServerProvider({
-        snapshot: snapshotValue,
-        maintenanceCapabilities: maintenanceCapabilities(),
-      });
 
       return {
         instanceId,
@@ -112,19 +104,23 @@ export const PiDriver: ProviderDriver<PiSettings, PiDriverEnv> = {
         displayName,
         accentColor,
         enabled,
-        snapshot,
+        snapshot: makeStaticServerProvider({
+          snapshot: snapshotValue,
+          maintenanceCapabilities: maintenanceCapabilities(),
+        }),
         adapter,
         textGeneration: makeUnsupportedTextGeneration("Pi"),
       } satisfies ProviderInstance;
     }).pipe(
-      Effect.mapError(
-        (cause) =>
-          new ProviderDriverError({
-            driver: DRIVER_KIND,
-            instanceId,
-            detail: `Failed to build Pi provider: ${String(cause)}`,
-            cause,
-          }),
+      Effect.mapError((cause) =>
+        Schema.is(ProviderDriverError)(cause)
+          ? cause
+          : new ProviderDriverError({
+              driver: DRIVER_KIND,
+              instanceId,
+              detail: `Failed to build native Pi provider: ${String(cause)}`,
+              cause,
+            }),
       ),
     ),
 };

@@ -13,7 +13,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 > [!NOTE]
 > This fork adds first-class Ocean and Pi access, per-thread model/thinking
 > selection, native session import, and a safe upstream updater. See the
-> [Ocean and Pi integration guide](./docs/providers/ocean-pi.md).
+> [Ocean and Pi integration guide](./docs/user/ocean-pi.md).
 
 ## Installation
 
@@ -28,7 +28,7 @@ We wanted something performant, remote-ready, and truly open. If we ever go the 
 
 ### Try it out (install-free)
 
-The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.16+, 23.11+, or 24.10+):
+The easiest way to test T3 Code is to run the server in your terminal (requires Node.js 22.19+, 23.11+, or 24.10+):
 
 ```bash
 npx t3@latest

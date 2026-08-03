@@ -89,7 +89,7 @@ export const PROVIDER_CLIENT_DEFINITIONS: readonly ProviderClientDefinition[] = 
     value: ProviderDriverKind.make("piAgent"),
     label: "Pi",
     icon: PiAgentIcon,
-    badgeLabel: "Custom",
+    badgeLabel: "SDK",
     settingsSchema: PiSettings,
   },
 ];

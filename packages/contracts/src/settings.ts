@@ -456,34 +456,13 @@ export const PiSettings = makeProviderSettingsSchema(
       Schema.withDecodingDefault(Effect.succeed(true)),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
-    binaryPath: makeBinaryPathSetting("npx").pipe(
-      Schema.annotateKey({
-        title: "Launcher binary",
-        description: "Command used to start pi-acp.",
-        providerSettingsForm: {
-          placeholder: "npx",
-          clearWhenEmpty: "omit",
-        },
-      }),
-    ),
-    launchArgs: TrimmedString.pipe(
-      Schema.withDecodingDefault(Effect.succeed("-y pi-acp@0.0.32")),
-      Schema.annotateKey({
-        title: "ACP bridge arguments",
-        description: "Arguments passed to the launcher. The default pins the tested pi-acp bridge.",
-        providerSettingsForm: {
-          placeholder: "-y pi-acp@0.0.32",
-          clearWhenEmpty: "omit",
-        },
-      }),
-    ),
     customModels: Schema.Array(Schema.String).pipe(
       Schema.withDecodingDefault(Effect.succeed([])),
       Schema.annotateKey({ providerSettingsForm: { hidden: true } }),
     ),
   },
   {
-    order: ["binaryPath", "launchArgs"],
+    order: [],
   },
 );
 export type PiSettings = typeof PiSettings.Type;
